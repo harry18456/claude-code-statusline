@@ -1,3 +1,7 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
 <!-- SPECTRA:START v1.0.1 -->
 
 # Spectra Instructions
@@ -26,10 +30,6 @@ Changes can be parked（暫存）— temporarily moved out of `openspec/changes/
 
 <!-- SPECTRA:END -->
 
-# CLAUDE.md
-
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
-
 ## Commands
 
 ### Building
@@ -42,8 +42,8 @@ go build ./cmd/statusline/
 # Run all Go unit tests
 go test ./...
 
-# Run tests for internal packages only
-go test ./internal/...
+# Run a specific package
+go test ./internal/renderer/ -v -run TestRenderWarningSymbolAt90
 
 # Run all display scenarios against the built binary
 ./examples/test-mock.sh
@@ -94,14 +94,14 @@ The binary auto-detects terminal capabilities and renders accordingly:
 
 ### Git dirty-check caching
 
-Git status is cached in `/tmp/claude-statusline-git-cache` for 5 seconds. The cache format is `branch|dirty_marker`. Cache freshness is checked using `os.Stat().ModTime()` (cross-platform Go standard library).
+Git status is cached in `os.TempDir()/claude-statusline-git-cache` for 5 seconds. The cache format is `branch|dirty_flag` (`1`/`0`). Cache freshness is checked using `os.Stat().ModTime()` (cross-platform; fixes the macOS-only `stat -f %m` bug from the original bash version).
 
 ### Output structure
 
 - **Line 1**: `◆ model │ progress_bar pct% │ $cost │ duration │ rate_limits`
 - **Line 2**: `⎇ branch* │ +added/-removed │ dirname │ ⚙ agent_or_worktree`
 
-Zero-value sections are omitted entirely. The `$0.00` cost is shown but dimmed.
+Zero-value sections are omitted entirely. The `$0.00` cost is shown but dimmed. Duration is suppressed if under 1 second. Worktree indicator takes priority over agent indicator.
 
 ### Environment variables
 
@@ -109,15 +109,13 @@ Zero-value sections are omitted entirely. The `$0.00` cost is shown but dimmed.
 |----------|---------|--------|
 | `CLAUDE_STATUSLINE_ASCII` | `0` | Pure ASCII, no Unicode |
 | `CLAUDE_STATUSLINE_NERDFONT` | `0` | Nerd Font icons + optional Powerline |
-| `CLAUDE_STATUSLINE_POWERLINE` | follows NERDFONT | `` arrow separators |
+| `CLAUDE_STATUSLINE_POWERLINE` | follows NERDFONT | `\ue0b0` arrow separators |
 | `COLORTERM` | system | `truecolor`/`24bit` enables RGB gradient |
 
-### File layout
+### Version injection
 
-- `cmd/statusline/main.go` — entry point; reads stdin and writes output
-- `internal/model/` — JSON struct definitions for the Claude Code payload
-- `internal/renderer/` — ANSI output assembly and rendering tiers
-- `internal/gitcache/` — git branch and dirty-state caching logic
-- `install.sh` — downloads the pre-built binary from GitHub Releases
-- `examples/test-mock.sh` — pipes mock JSON into the binary for local testing
-- `docs/slides.js` — standalone Node.js script using `pptxgenjs` to generate the presentation; has no relation to the statusline runtime
+The `version` variable in `main.go` defaults to `"dev"`. Release builds inject the git tag via:
+```
+-ldflags="-X main.version=v1.0.0"
+```
+This is handled automatically by `.github/workflows/release.yml` using `${{ github.ref_name }}`.

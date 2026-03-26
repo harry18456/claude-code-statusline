@@ -59,8 +59,8 @@
 
 - [x] 10.1 在 `cmd/statusline/main.go` 加入 `var version = "dev"` 變數（build time 預設值）
 - [x] 10.2 更新 `.github/workflows/release.yml`：build 步驟加入 `-X main.version=${{ github.ref_name }}` 使 tag 名稱在 release build 時自動注入
-- [ ] [P] 10.3 commit 所有變更（包含 Go 重寫、README、CLAUDE.md、install.sh、release.yml 等）
-- [ ] [P] 10.4 push 至 remote，確認 GitHub Actions 可正常觸發
+- [x] [P] 10.3 commit 所有變更（包含 Go 重寫、README、CLAUDE.md、install.sh、release.yml 等）
+- [x] [P] 10.4 push 至 remote，確認 GitHub Actions 可正常觸發
 
 ## 9. 驗證與收尾
 

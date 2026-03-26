@@ -9,9 +9,9 @@ docs/claude-code-statusline.pdf
 .spectra/
 openspec/.vector-search.db*
 
-# Go build artifacts
-statusline
-statusline.exe
+# Go build artifacts (root-level compiled binaries)
+/statusline
+/statusline.exe
 
 # Claude Code internal directories
 .agent/
