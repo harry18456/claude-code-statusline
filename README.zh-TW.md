@@ -43,38 +43,51 @@
 | **三層渲染退回** | 真彩色 → ANSI → ASCII。任何終端機都能用。 |
 | **Nerd Font 支援** | 選配：``, `󰔟`, `` 圖示。設定 `CLAUDE_STATUSLINE_NERDFONT=1`。 |
 | **Powerline 分隔符** | 選配：`` 箭頭。設定 `CLAUDE_STATUSLINE_POWERLINE=1`。 |
-| **< 50ms** | 單次 `jq` 呼叫 + Git 快取。無感延遲。 |
+| **< 50ms** | 編譯好的 Go binary + Git 快取。無感延遲。 |
 
 ## 安裝
 
 ### 前置條件
 
 - 已安裝 [Claude Code](https://docs.anthropic.com/en/docs/claude-code)
-- `jq` — 用 `brew install jq`（macOS）或 `apt install jq`（Linux）安裝
 
-### 快速安裝
+### 快速安裝（macOS / Linux）
 
 ```bash
-git clone https://github.com/kcchien/claude-code-statusline.git
+curl -fsSL https://raw.githubusercontent.com/harry18456/claude-code-statusline/main/install.sh | bash
+```
+
+或 clone 後執行：
+
+```bash
+git clone https://github.com/harry18456/claude-code-statusline.git
 cd claude-code-statusline
 ./install.sh
 ```
 
-### 手動安裝
+安裝程式會從 [GitHub Releases](https://github.com/harry18456/claude-code-statusline/releases) 下載預先編譯好的 binary，並放置於 `~/.claude/statusline`。
+
+### Windows（Git Bash）
+
+從 Git Bash 執行 `install.sh`：
 
 ```bash
-# 1. 複製腳本
-cp statusline.sh ~/.claude/statusline.sh
-chmod +x ~/.claude/statusline.sh
-
-# 2. 編輯 ~/.claude/settings.json，加入：
+git clone https://github.com/harry18456/claude-code-statusline.git
+cd claude-code-statusline
+./install.sh
 ```
+
+或手動從 [GitHub Releases](https://github.com/harry18456/claude-code-statusline/releases) 下載 `statusline-windows-amd64.exe`，放置於 `~/.claude/statusline.exe`。
+
+### 手動設定 settings.json
+
+安裝完成後，編輯 `~/.claude/settings.json`，加入：
 
 ```json
 {
   "statusLine": {
     "type": "command",
-    "command": "~/.claude/statusline.sh",
+    "command": "~/.claude/statusline",
     "timeout": 10
   }
 }

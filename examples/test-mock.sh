@@ -1,35 +1,50 @@
 #!/usr/bin/env bash
-# test-mock.sh — Test statusline.sh with mock JSON data
+# test-mock.sh — Test the statusline binary with mock JSON data
 #
 # Usage: ./examples/test-mock.sh [scenario]
 # Scenarios: normal, warning, danger, startup, agent, worktree, ascii, nerdfont
+#
+# The binary is built automatically if not found at the project root.
 
 set -euo pipefail
 
-SCRIPT="${1:-all}"
-STATUSLINE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/statusline.sh"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+SCENARIO="${1:-all}"
 
-if [[ ! -x "$STATUSLINE" ]]; then
-  echo "Error: $STATUSLINE not found or not executable"
-  exit 1
+# ── Locate or build the binary ──────────────────────────────────────────────
+
+# On Windows (Git Bash) the binary has .exe extension
+if [[ "$(uname -s)" == MINGW* || "$(uname -s)" == MSYS* || "$(uname -s)" == CYGWIN* ]]; then
+  BIN="$PROJECT_ROOT/statusline.exe"
+else
+  BIN="$PROJECT_ROOT/statusline"
 fi
+
+if [[ ! -x "$BIN" ]]; then
+  echo "Binary not found at $BIN — building..."
+  (cd "$PROJECT_ROOT" && go build -o "$(basename "$BIN")" ./cmd/statusline/)
+  echo "Built OK"
+fi
+
+# ── Test runner ──────────────────────────────────────────────────────────────
 
 run_test() {
   local label="$1"
   local json="$2"
-  local env_prefix="${3:-}"
+  shift 2
 
   echo ""
   echo "━━━ $label ━━━"
-  if [[ -n "$env_prefix" ]]; then
-    echo "$json" | env $env_prefix "$STATUSLINE"
+  if [[ $# -gt 0 ]]; then
+    echo "$json" | env "$@" "$BIN"
   else
-    echo "$json" | "$STATUSLINE"
+    echo "$json" | "$BIN"
   fi
   echo ""
 }
 
-# ── Test data ──
+# ── Test data ────────────────────────────────────────────────────────────────
 
 JSON_NORMAL='{"model":{"display_name":"Claude Opus 4.6"},"context_window":{"used_percentage":42,"context_window_size":1000000},"cost":{"total_cost_usd":0.85,"total_lines_added":150,"total_lines_removed":30,"total_duration_ms":222000},"workspace":{"current_dir":"/Users/dev/my-project"},"worktree":{"branch":"main"},"rate_limits":{"five_hour":{"used_percentage":15},"seven_day":{"used_percentage":8}}}'
 
@@ -43,9 +58,9 @@ JSON_AGENT='{"model":{"display_name":"Claude Opus 4.6"},"context_window":{"used_
 
 JSON_WORKTREE='{"model":{"display_name":"Claude Opus 4.6"},"context_window":{"used_percentage":42,"context_window_size":1000000},"cost":{"total_cost_usd":0.85,"total_lines_added":150,"total_lines_removed":30,"total_duration_ms":222000},"workspace":{"current_dir":"/Users/dev/my-project"},"worktree":{"branch":"worktree-my-feature","name":"my-feature","path":"/path/to/worktree"}}'
 
-# ── Run tests ──
+# ── Run tests ────────────────────────────────────────────────────────────────
 
-case "${SCRIPT}" in
+case "$SCENARIO" in
   normal)   run_test "Normal (42%, green)" "$JSON_NORMAL" ;;
   warning)  run_test "Warning (75%, yellow)" "$JSON_WARNING" ;;
   danger)   run_test "Danger (92%, red + ⚠)" "$JSON_DANGER" ;;
@@ -65,7 +80,7 @@ case "${SCRIPT}" in
     run_test "Nerd Font mode" "$JSON_NORMAL" "CLAUDE_STATUSLINE_NERDFONT=1"
     ;;
   *)
-    echo "Unknown scenario: $SCRIPT"
+    echo "Unknown scenario: $SCENARIO"
     echo "Available: normal, warning, danger, startup, agent, worktree, ascii, nerdfont, all"
     exit 1
     ;;

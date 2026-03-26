@@ -43,40 +43,51 @@ Turn the blank status bar into a real-time dashboard: model, context usage with 
 | **3-tier rendering** | True color → ANSI → ASCII. Works in any terminal. |
 | **Nerd Font support** | Optional: ``, `󰔟`, `` icons. Set `CLAUDE_STATUSLINE_NERDFONT=1`. |
 | **Powerline separators** | Optional: `` arrows. Set `CLAUDE_STATUSLINE_POWERLINE=1`. |
-| **< 50ms** | Single `jq` call + cached git. No perceptible lag. |
+| **< 50ms** | Compiled Go binary + cached git. No perceptible lag. |
 
 ## Installation
 
 ### Prerequisites
 
 - [Claude Code](https://docs.anthropic.com/en/docs/claude-code) installed
-- `jq` — install with `brew install jq` (macOS) or `apt install jq` (Linux)
 
-### Quick install
+### Quick install (macOS / Linux)
 
 ```bash
-git clone https://github.com/kcchien/claude-code-statusline.git
+curl -fsSL https://raw.githubusercontent.com/harry18456/claude-code-statusline/main/install.sh | bash
+```
+
+Or clone and run:
+
+```bash
+git clone https://github.com/harry18456/claude-code-statusline.git
 cd claude-code-statusline
 ./install.sh
 ```
 
-### Manual install
+The installer downloads the pre-built binary from [GitHub Releases](https://github.com/harry18456/claude-code-statusline/releases) and places it at `~/.claude/statusline`.
+
+### Windows (Git Bash)
+
+Run `install.sh` from Git Bash:
 
 ```bash
-# 1. Copy the script
-cp statusline.sh ~/.claude/statusline.sh
-chmod +x ~/.claude/statusline.sh
-
-# 2. Add to ~/.claude/settings.json
+git clone https://github.com/harry18456/claude-code-statusline.git
+cd claude-code-statusline
+./install.sh
 ```
 
-Add this to your `settings.json`:
+Or manually download `statusline-windows-amd64.exe` from [GitHub Releases](https://github.com/harry18456/claude-code-statusline/releases) and place it at `~/.claude/statusline.exe`.
+
+### Manual settings.json
+
+After installation, add this to your `~/.claude/settings.json`:
 
 ```json
 {
   "statusLine": {
     "type": "command",
-    "command": "~/.claude/statusline.sh",
+    "command": "~/.claude/statusline",
     "timeout": 10
   }
 }
