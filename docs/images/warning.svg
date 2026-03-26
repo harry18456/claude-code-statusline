@@ -1,7 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="780" height="80" viewBox="0 0 780 80">
-  <rect width="780" height="80" rx="8" fill="#1a1b26"/>
-  <text font-family="'JetBrains Mono','Fira Code','SF Mono',Menlo,Consolas,monospace" font-size="13">
-    <tspan x="16" y="30" fill="#7266EA">◆</tspan><tspan fill="#5BC0DE"> Claude Sonnet 4.6</tspan><tspan fill="#555"> │ </tspan><tspan fill="#2ECC71">█</tspan><tspan fill="#74C359">█</tspan><tspan fill="#BABA40">█</tspan><tspan fill="#F1C40F">█</tspan><tspan fill="#EFA118">█</tspan><tspan fill="#EC7E22">█</tspan><tspan fill="#E9652C">█</tspan><tspan fill="#3C3C3C">░░░</tspan><tspan fill="#F1C40F"> 75%</tspan><tspan fill="#888"> 200k</tspan><tspan fill="#555"> │ </tspan><tspan fill="#F1C40F">$3.20</tspan><tspan fill="#555"> │ </tspan><tspan fill="#888">12m5s</tspan><tspan fill="#555"> │ </tspan><tspan fill="#888">5h:48%</tspan>
-    <tspan x="16" y="56" fill="#888">⎇feat/auth*</tspan><tspan fill="#555"> │ </tspan><tspan fill="#2ECC71">+280</tspan><tspan fill="#ccc">/</tspan><tspan fill="#E74C3C">-45</tspan><tspan fill="#555"> │ </tspan><tspan fill="#3498DB">my-project</tspan>
-  </text>
-</svg>
