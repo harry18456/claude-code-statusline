@@ -73,19 +73,25 @@ Move-Item statusline-windows-amd64.exe "$env:USERPROFILE\.claude\statusline.exe"
 
 編輯 `~/.claude/settings.json`（若不存在請自行建立）。
 
-**macOS / Linux** — 路徑設定為：
+**macOS / Linux**
 
 ```json
 {
-  "statusLine": "/Users/你的使用者名稱/.claude/statusline"
+  "statusLine": {
+    "type": "command",
+    "command": "/Users/你的使用者名稱/.claude/statusline"
+  }
 }
 ```
 
-**Windows** — 路徑設定為：
+**Windows**
 
 ```json
 {
-  "statusLine": "C:/Users/你的使用者名稱/.claude/statusline.exe"
+  "statusLine": {
+    "type": "command",
+    "command": "C:/Users/你的使用者名稱/.claude/statusline.exe"
+  }
 }
 ```
 
@@ -96,7 +102,10 @@ Move-Item statusline-windows-amd64.exe "$env:USERPROFILE\.claude\statusline.exe"
 ```json
 {
   "someOtherSetting": true,
-  "statusLine": "/Users/你的使用者名稱/.claude/statusline"
+  "statusLine": {
+    "type": "command",
+    "command": "/Users/你的使用者名稱/.claude/statusline"
+  }
 }
 ```
 

@@ -73,19 +73,25 @@ Move-Item statusline-windows-amd64.exe "$env:USERPROFILE\.claude\statusline.exe"
 
 Edit `~/.claude/settings.json` (create it if it does not exist).
 
-**macOS / Linux** — set the path to:
+**macOS / Linux**
 
 ```json
 {
-  "statusLine": "/Users/YOUR_USERNAME/.claude/statusline"
+  "statusLine": {
+    "type": "command",
+    "command": "/Users/YOUR_USERNAME/.claude/statusline"
+  }
 }
 ```
 
-**Windows** — set the path to:
+**Windows**
 
 ```json
 {
-  "statusLine": "C:/Users/YOUR_USERNAME/.claude/statusline.exe"
+  "statusLine": {
+    "type": "command",
+    "command": "C:/Users/YOUR_USERNAME/.claude/statusline.exe"
+  }
 }
 ```
 
@@ -96,7 +102,10 @@ If `settings.json` already has content, add the `"statusLine"` key inside the ex
 ```json
 {
   "someOtherSetting": true,
-  "statusLine": "/Users/YOUR_USERNAME/.claude/statusline"
+  "statusLine": {
+    "type": "command",
+    "command": "/Users/YOUR_USERNAME/.claude/statusline"
+  }
 }
 ```
 
