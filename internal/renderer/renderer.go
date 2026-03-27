@@ -94,7 +94,7 @@ func symbolSet(opts Options) symbols {
 	}
 	return symbols{
 		brand:  "◆",
-		branch: "⎇",
+		branch: "⎇ ",
 		warn:   " ⚠",
 		time:   "",
 		cost:   "",
@@ -124,7 +124,7 @@ func buildBar(pct int, opts Options) string {
 
 	if opts.ASCIIMode {
 		var sb strings.Builder
-		for i := 0; i < 10; i++ {
+		for i := range 10 {
 			if i < filled {
 				sb.WriteByte('#')
 			} else {
@@ -136,7 +136,7 @@ func buildBar(pct int, opts Options) string {
 
 	if opts.TrueColor {
 		var sb strings.Builder
-		for i := 0; i < 10; i++ {
+		for i := range 10 {
 			if i < filled {
 				sb.WriteString(ansiRGB(gradR[i], gradG[i], gradB[i]))
 				sb.WriteString("█")
@@ -161,7 +161,7 @@ func buildBar(pct int, opts Options) string {
 	}
 
 	var bar strings.Builder
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		if i < filled {
 			bar.WriteString("█")
 		} else {
