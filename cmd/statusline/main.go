@@ -18,6 +18,11 @@ import (
 var version = "dev"
 
 func main() {
+	if len(os.Args) > 1 && os.Args[1] == "--version" {
+		fmt.Println(version)
+		return
+	}
+
 	p, err := model.ParsePayload(os.Stdin)
 	if err != nil {
 		// Fallback: single gray line, exit 0 so Claude Code still works

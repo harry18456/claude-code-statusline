@@ -12,6 +12,10 @@ openspec/.vector-search.db*
 # Go build artifacts (root-level compiled binaries)
 /statusline
 /statusline.exe
+/debug-tee.exe
+
+# Dev working files
+/debug.json
 
 # Claude Code internal directories
 .agent/
