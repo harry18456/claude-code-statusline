@@ -8,13 +8,16 @@ import (
 
 // RateLimit represents a single rate limit entry.
 // Present is true only when the JSON field was explicitly included.
+// ResetsAt is 0 when the field is absent.
 type RateLimit struct {
 	UsedPercentage float64 `json:"used_percentage"`
-	Present        bool    `json:"-"`
+	ResetsAt       int64
+	Present        bool `json:"-"`
 }
 
 type rateLimitRaw struct {
 	UsedPercentage float64 `json:"used_percentage"`
+	ResetsAt       int64   `json:"resets_at"`
 }
 
 // RateLimits holds the optional 5-hour and 7-day rate limit values.
@@ -126,12 +129,14 @@ func ParsePayload(r io.Reader) (*Payload, error) {
 	if raw.RateLimits.FiveHour != nil {
 		p.RateLimits.FiveHour = RateLimit{
 			UsedPercentage: raw.RateLimits.FiveHour.UsedPercentage,
+			ResetsAt:       raw.RateLimits.FiveHour.ResetsAt,
 			Present:        true,
 		}
 	}
 	if raw.RateLimits.SevenDay != nil {
 		p.RateLimits.SevenDay = RateLimit{
 			UsedPercentage: raw.RateLimits.SevenDay.UsedPercentage,
+			ResetsAt:       raw.RateLimits.SevenDay.ResetsAt,
 			Present:        true,
 		}
 	}

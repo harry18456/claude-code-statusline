@@ -1,9 +1,11 @@
 package renderer
 
 import (
+	"fmt"
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"claude-code-statusline/internal/model"
 )
@@ -382,6 +384,91 @@ func TestRenderContextLabel200k(t *testing.T) {
 	if !strings.Contains(plain, "200k") {
 		t.Errorf("200k label missing, got: %q", plain)
 	}
+}
+
+// ─── formatCountdown unit tests ───────────────────────────────────────────────
+
+func TestFormatCountdown_AboveOneDay(t *testing.T) {
+	// 50 hours from now → (2d 2h)
+	resetsAt := time.Now().Add(50 * time.Hour).Unix()
+	result := formatCountdown(resetsAt)
+	if !strings.Contains(result, "d") {
+		t.Errorf(">=24h should show days, got: %q", result)
+	}
+	if !strings.Contains(result, "h") {
+		t.Errorf(">=24h should show hours, got: %q", result)
+	}
+	if !strings.HasPrefix(result, "(") || !strings.HasSuffix(result, ")") {
+		t.Errorf("result should be wrapped in parens, got: %q", result)
+	}
+}
+
+func TestFormatCountdown_AboveOneHour(t *testing.T) {
+	// 90 minutes from now → should show (Xh Ym)
+	resetsAt := time.Now().Add(90 * time.Minute).Unix()
+	result := formatCountdown(resetsAt)
+	if !strings.Contains(result, "h") || !strings.Contains(result, "m") {
+		t.Errorf(">=60 min should show (Xh Ym), got: %q", result)
+	}
+	if !strings.HasPrefix(result, "(") || !strings.HasSuffix(result, ")") {
+		t.Errorf("result should be wrapped in parens, got: %q", result)
+	}
+}
+
+func TestFormatCountdown_BelowOneHour(t *testing.T) {
+	// 30 minutes from now → should show (Ym), no hours
+	resetsAt := time.Now().Add(30 * time.Minute).Unix()
+	result := formatCountdown(resetsAt)
+	if strings.Contains(result, "h") {
+		t.Errorf("<60 min should NOT show hours, got: %q", result)
+	}
+	if !strings.Contains(result, "m") {
+		t.Errorf("<60 min should show minutes, got: %q", result)
+	}
+	if !strings.HasPrefix(result, "(") || !strings.HasSuffix(result, ")") {
+		t.Errorf("result should be wrapped in parens, got: %q", result)
+	}
+}
+
+func TestFormatCountdown_Expired(t *testing.T) {
+	// In the past → should show (now)
+	resetsAt := time.Now().Add(-5 * time.Minute).Unix()
+	result := formatCountdown(resetsAt)
+	if result != "(now)" {
+		t.Errorf("expired should show (now), got: %q", result)
+	}
+}
+
+// ─── Rate limit countdown integration ─────────────────────────────────────────
+
+func TestRenderRateLimitCountdownShownAbove80(t *testing.T) {
+	// rate limit >= 80% and resets_at present → countdown appears in line1
+	futureTs := time.Now().Add(90 * time.Minute).Unix()
+	jsonWith := `{"model":{"display_name":"Claude Opus 4.6"},"context_window":{"used_percentage":42,"context_window_size":1000000},"cost":{"total_cost_usd":0.85,"total_duration_ms":222000},"workspace":{"current_dir":"/tmp/x"},"rate_limits":{"five_hour":{"used_percentage":85,"resets_at":` + itoa(futureTs) + `}}}`
+	p := mustParse(t, jsonWith)
+	line1, _ := renderWith(p, GitInfo{}, DefaultOptions())
+	plain := stripANSI(line1)
+	// Countdown should appear: either "h" or "m" in parentheses after percentage
+	if !strings.Contains(plain, "(") || !strings.Contains(plain, ")") {
+		t.Errorf("line1 should contain countdown in parens when rate >= 80%%, got: %q", plain)
+	}
+}
+
+func TestRenderRateLimitCountdownShownBelow80(t *testing.T) {
+	// rate limit < 80% but resets_at present → countdown always shown
+	futureTs := time.Now().Add(90 * time.Minute).Unix()
+	jsonWith := `{"model":{"display_name":"Claude Opus 4.6"},"context_window":{"used_percentage":42,"context_window_size":1000000},"cost":{"total_cost_usd":0.85,"total_duration_ms":222000},"workspace":{"current_dir":"/tmp/x"},"rate_limits":{"five_hour":{"used_percentage":50,"resets_at":` + itoa(futureTs) + `}}}`
+	p := mustParse(t, jsonWith)
+	line1, _ := renderWith(p, GitInfo{}, DefaultOptions())
+	plain := stripANSI(line1)
+	// Countdown should appear regardless of pct
+	if !strings.Contains(plain, "(") || !strings.Contains(plain, ")") {
+		t.Errorf("line1 should contain countdown even when rate < 80%%, got: %q", plain)
+	}
+}
+
+func itoa(n int64) string {
+	return fmt.Sprintf("%d", n)
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────

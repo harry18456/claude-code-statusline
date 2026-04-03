@@ -96,6 +96,36 @@ func TestParsePayload_MissingFields(t *testing.T) {
 	}
 }
 
+func TestParsePayload_ResetsAtPresent(t *testing.T) {
+	json := `{"model":{"display_name":"Claude Opus 4.6"},"context_window":{"used_percentage":85,"context_window_size":200000},"cost":{"total_cost_usd":2.50,"total_duration_ms":300000},"workspace":{"current_dir":"/Users/dev/my-project"},"rate_limits":{"five_hour":{"used_percentage":85,"resets_at":1700000000},"seven_day":{"used_percentage":62,"resets_at":1700100000}}}`
+
+	p, err := ParsePayload(strings.NewReader(json))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if p.RateLimits.FiveHour.ResetsAt != 1700000000 {
+		t.Errorf("five_hour resets_at: got %v, want 1700000000", p.RateLimits.FiveHour.ResetsAt)
+	}
+	if p.RateLimits.SevenDay.ResetsAt != 1700100000 {
+		t.Errorf("seven_day resets_at: got %v, want 1700100000", p.RateLimits.SevenDay.ResetsAt)
+	}
+}
+
+func TestParsePayload_ResetsAtAbsent(t *testing.T) {
+	json := `{"model":{"display_name":"Claude Opus 4.6"},"context_window":{"used_percentage":85,"context_window_size":200000},"cost":{"total_cost_usd":2.50,"total_duration_ms":300000},"workspace":{"current_dir":"/Users/dev/my-project"},"rate_limits":{"five_hour":{"used_percentage":85},"seven_day":{"used_percentage":62}}}`
+
+	p, err := ParsePayload(strings.NewReader(json))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if p.RateLimits.FiveHour.ResetsAt != 0 {
+		t.Errorf("five_hour resets_at should be 0 when absent, got %v", p.RateLimits.FiveHour.ResetsAt)
+	}
+	if p.RateLimits.SevenDay.ResetsAt != 0 {
+		t.Errorf("seven_day resets_at should be 0 when absent, got %v", p.RateLimits.SevenDay.ResetsAt)
+	}
+}
+
 func TestParsePayload_EmptyInput(t *testing.T) {
 	_, err := ParsePayload(strings.NewReader(""))
 	if err == nil {

@@ -6,6 +6,7 @@ import (
 	"math"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"claude-code-statusline/internal/model"
 )
@@ -229,15 +230,45 @@ func ctxLabel(size int64, modelName string) string {
 
 // ─── Rate limits ──────────────────────────────────────────────────────────────
 
+// formatCountdown returns the remaining time until resetsAt as a parenthesised
+// string: "(Xd Yh)" if >= 24h, "(Xh Ym)" if >= 60 min, "(Ym)" if < 60 min, "(now)" if expired.
+// Returns "" when resetsAt is zero (absent).
+func formatCountdown(resetsAt int64) string {
+	if resetsAt == 0 {
+		return ""
+	}
+	remaining := time.Until(time.Unix(resetsAt, 0))
+	if remaining <= 0 {
+		return "(now)"
+	}
+	totalMin := int(remaining.Minutes())
+	hours := totalMin / 60
+	mins := totalMin % 60
+	if hours >= 24 {
+		days := hours / 24
+		remHours := hours % 24
+		return fmt.Sprintf("(%dd %dh)", days, remHours)
+	}
+	if hours > 0 {
+		return fmt.Sprintf("(%dh %dm)", hours, mins)
+	}
+	return fmt.Sprintf("(%dm)", mins)
+}
+
 func formatRate(label string, rl model.RateLimit) string {
 	if !rl.Present {
 		return ""
 	}
 	pct := int(math.Round(rl.UsedPercentage))
+	color := ansiGray
 	if pct >= 80 {
-		return fmt.Sprintf("%s%s:%d%%%s", ansiRed, label, pct, ansiReset)
+		color = ansiRed
 	}
-	return fmt.Sprintf("%s%s:%d%%%s", ansiGray, label, pct, ansiReset)
+	countdown := formatCountdown(rl.ResetsAt)
+	if countdown != "" {
+		return fmt.Sprintf("%s%s:%d%%%s %s", color, label, pct, ansiReset, countdown)
+	}
+	return fmt.Sprintf("%s%s:%d%%%s", color, label, pct, ansiReset)
 }
 
 // ─── Render ───────────────────────────────────────────────────────────────────
