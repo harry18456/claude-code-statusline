@@ -32,9 +32,10 @@ Changes can be parked（暫存）— temporarily moved out of `openspec/changes/
 
 ## Commands
 
-### Building
+### Local development
 ```bash
-go build ./cmd/statusline/
+./dev.sh build      # Compile with git-describe version + install to ~/.claude/statusline.exe
+./dev.sh last-json  # Extract latest Claude payload from debug log → ./debug.json
 ```
 
 ### Testing
@@ -42,32 +43,18 @@ go build ./cmd/statusline/
 # Run all Go unit tests
 go test ./...
 
-# Run a specific package
+# Run a specific test
 go test ./internal/renderer/ -v -run TestRenderWarningSymbolAt90
-
-# Run all display scenarios against the built binary
-./examples/test-mock.sh
-
-# Run a specific scenario
-./examples/test-mock.sh normal     # 42%, green
-./examples/test-mock.sh warning    # 75%, yellow
-./examples/test-mock.sh danger     # 92%, red + ⚠
-./examples/test-mock.sh startup    # zero-value state
-./examples/test-mock.sh agent      # subagent indicator
-./examples/test-mock.sh worktree   # worktree indicator
-./examples/test-mock.sh ascii      # ASCII fallback mode
-./examples/test-mock.sh nerdfont   # Nerd Font mode
 ```
 
-### Installing
+### Checking installed version
 ```bash
-./install.sh   # Downloads the pre-built binary from GitHub Releases
+~/.claude/statusline.exe --version
 ```
 
-### Slides generation (docs only)
+### Building without installing
 ```bash
-npm install
-node docs/slides.js   # Generates the PPTX presentation
+go build ./cmd/statusline/
 ```
 
 ## Architecture
@@ -98,7 +85,7 @@ Git status is cached in `os.TempDir()/claude-statusline-git-cache` for 5 seconds
 
 ### Output structure
 
-- **Line 1**: `◆ model │ progress_bar pct% │ $cost │ duration │ rate_limits`
+- **Line 1**: `◆ model │ progress_bar pct% │ $cost │ duration │ rate_limits` — rate limits show as `5h:85% (1h 23m)` when `resets_at` is present; countdown format: `(Xd Yh)` / `(Xh Ym)` / `(Ym)` / `(now)`
 - **Line 2**: `⎇ branch* │ +added/-removed │ dirname │ ⚙ agent_or_worktree`
 
 Zero-value sections are omitted entirely. The `$0.00` cost is shown but dimmed. Duration is suppressed if under 1 second. Worktree indicator takes priority over agent indicator.
@@ -118,4 +105,4 @@ The `version` variable in `main.go` defaults to `"dev"`. Release builds inject t
 ```
 -ldflags="-X main.version=v1.0.0"
 ```
-This is handled automatically by `.github/workflows/release.yml` using `${{ github.ref_name }}`.
+This is handled automatically by `.github/workflows/release.yml` using `${{ github.ref_name }}`. Local builds via `./dev.sh build` inject `git describe --tags --dirty`. The binary exposes this via `--version`.
