@@ -9,7 +9,7 @@
 ## 畫面說明
 
 ```
-◆ Sonnet 4.6 │ ████████░░ 78% │ $1.23 │ 14m32s │ 5h:42% 7d:15%
+◆ Sonnet 4.6 │ ████████░░ 78% │ $1.23 │ 14m32s │ 5h:85% (1h 23m) 7d:15%
 ⎇ main* │ +84/-12 │ my-project │ ⚙ code-reviewer
 ```
 
@@ -25,7 +25,7 @@
 | 視窗大小 | `200k` / `1M` | 僅在模型名稱未包含此資訊時顯示 |
 | 花費 | `$1.23` | 本次 session 累積 token 費用（估算值）。黃色 > $0，紅色 ≥ $10，$0.00 時顯示為灰色 |
 | 時間 | `14m32s` | Session 總時長。不足 1 秒時隱藏 |
-| 速率限制 | `5h:42%` `7d:15%` | 5 小時與 7 天配額使用率（僅 Claude Pro/Max）。≥ 80% 時轉紅 |
+| 速率限制 | `5h:85% (1h 23m)` | 5 小時與 7 天配額使用率（僅 Claude Pro/Max）。≥ 80% 時轉紅。有重置時間時附加倒數：`(Xd Yh)` / `(Xh Ym)` / `(Ym)` / `(now)` |
 
 ### 第二行
 
@@ -112,6 +112,13 @@ Move-Item statusline-windows-amd64.exe "$env:USERPROFILE\.claude\statusline.exe"
 ### 第四步 — 驗證
 
 重新啟動 Claude Code。第一次回應後，狀態列應出現在終端機底部。
+
+隨時可確認已安裝的版本：
+
+```bash
+~/.claude/statusline --version      # macOS / Linux
+~/.claude/statusline.exe --version  # Windows
+```
 
 ---
 

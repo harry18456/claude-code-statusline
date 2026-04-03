@@ -9,7 +9,7 @@ A real-time status line for [Claude Code](https://docs.anthropic.com/en/docs/cla
 ## What You See
 
 ```
-◆ Sonnet 4.6 │ ████████░░ 78% │ $1.23 │ 14m32s │ 5h:42% 7d:15%
+◆ Sonnet 4.6 │ ████████░░ 78% │ $1.23 │ 14m32s │ 5h:85% (1h 23m) 7d:15%
 ⎇ main* │ +84/-12 │ my-project │ ⚙ code-reviewer
 ```
 
@@ -25,7 +25,7 @@ A real-time status line for [Claude Code](https://docs.anthropic.com/en/docs/cla
 | Context size | `200k` / `1M` | Shown only when not already in the model name |
 | Cost | `$1.23` | Cumulative token cost this session (estimate). Yellow > $0, red ≥ $10, gray at $0.00 |
 | Duration | `14m32s` | Total session time. Hidden if under 1 second |
-| Rate limits | `5h:42%` `7d:15%` | 5-hour and 7-day quota usage (Claude Pro/Max only). Red when ≥ 80% |
+| Rate limits | `5h:85% (1h 23m)` | 5-hour and 7-day quota usage (Claude Pro/Max only). Red when ≥ 80%. Countdown to reset appended when available: `(Xd Yh)` / `(Xh Ym)` / `(Ym)` / `(now)` |
 
 ### Line 2
 
@@ -112,6 +112,13 @@ If `settings.json` already has content, add the `"statusLine"` key inside the ex
 ### Step 4 — Verify
 
 Start or restart Claude Code. The status line should appear at the bottom of the terminal after the first response.
+
+To check the installed version at any time:
+
+```bash
+~/.claude/statusline --version   # macOS / Linux
+~/.claude/statusline.exe --version  # Windows
+```
 
 ---
 
