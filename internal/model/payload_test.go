@@ -140,6 +140,39 @@ func TestParsePayload_InvalidJSON(t *testing.T) {
 	}
 }
 
+func TestParsePayload_ExceedsTokens200kTrue(t *testing.T) {
+	json := `{"model":{"display_name":"Claude Opus 4.6"},"context_window":{"used_percentage":42,"context_window_size":1000000},"cost":{"total_cost_usd":0.85,"total_duration_ms":222000},"workspace":{"current_dir":"/Users/dev/my-project"},"exceeds_200k_tokens":true}`
+	p, err := ParsePayload(strings.NewReader(json))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !p.ExceedsTokens200k {
+		t.Errorf("ExceedsTokens200k: got false, want true")
+	}
+}
+
+func TestParsePayload_ExceedsTokens200kFalse(t *testing.T) {
+	json := `{"model":{"display_name":"Claude Opus 4.6"},"context_window":{"used_percentage":42,"context_window_size":1000000},"cost":{"total_cost_usd":0.85,"total_duration_ms":222000},"workspace":{"current_dir":"/Users/dev/my-project"},"exceeds_200k_tokens":false}`
+	p, err := ParsePayload(strings.NewReader(json))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if p.ExceedsTokens200k {
+		t.Errorf("ExceedsTokens200k: got true, want false")
+	}
+}
+
+func TestParsePayload_ExceedsTokens200kAbsent(t *testing.T) {
+	json := `{"model":{"display_name":"Claude Opus 4.6"},"context_window":{"used_percentage":42,"context_window_size":1000000},"cost":{"total_cost_usd":0.85,"total_duration_ms":222000},"workspace":{"current_dir":"/Users/dev/my-project"}}`
+	p, err := ParsePayload(strings.NewReader(json))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if p.ExceedsTokens200k {
+		t.Errorf("ExceedsTokens200k (absent): got true, want false")
+	}
+}
+
 func TestParsePayload_RateLimitAbsent(t *testing.T) {
 	// rate_limits absent — check that HasFiveHour / HasSevenDay are false
 	json := `{"model":{"display_name":"Claude Opus 4.6"},"context_window":{"used_percentage":75,"context_window_size":200000},"cost":{"total_cost_usd":3.20,"total_lines_added":280,"total_lines_removed":45,"total_duration_ms":725000},"workspace":{"current_dir":"/Users/dev/my-project"},"worktree":{"branch":"feat/auth"},"rate_limits":{"five_hour":{"used_percentage":48}}}`

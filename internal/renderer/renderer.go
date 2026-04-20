@@ -4,6 +4,7 @@ package renderer
 import (
 	"fmt"
 	"math"
+	"os"
 	"path/filepath"
 	"strings"
 	"time"
@@ -213,19 +214,79 @@ func formatDuration(ms int64) string {
 
 // ─── Context window label ─────────────────────────────────────────────────────
 
-func ctxLabel(size int64, modelName string) string {
+func ctxLabel(size int64, modelName string, exceeds200k bool) string {
 	nameLower := strings.ToLower(modelName)
 	if strings.Contains(nameLower, "context") {
 		return ""
 	}
 	switch {
 	case size >= 1_000_000:
-		return " " + ansiGray + "1M" + ansiReset
+		color := ansiGray
+		if exceeds200k {
+			color = ansiRed
+		}
+		return " " + color + "1M" + ansiReset
 	case size >= 200_000:
 		return " " + ansiGray + "200k" + ansiReset
 	default:
 		return ""
 	}
+}
+
+// ─── Directory display ───────────────────────────────────────────────────────
+
+// resolveProjectRoot determines the project root via a three-step fallback:
+//  1. If payloadProjectDir is a strict ancestor of currentDir, return it.
+//  2. Otherwise walk upward from currentDir; the first directory containing a
+//     .git entry (file or directory) wins.
+//  3. Otherwise return "" (no root detected).
+//
+// The walk uses os.Stat only — no git CLI, so it works without git installed
+// and handles worktrees/submodules (where .git is a file) transparently.
+func resolveProjectRoot(currentDir, payloadProjectDir string) string {
+	if currentDir == "" {
+		return ""
+	}
+	if payloadProjectDir != "" && payloadProjectDir != currentDir {
+		rel, err := filepath.Rel(payloadProjectDir, currentDir)
+		if err == nil && rel != "." && rel != "" && !strings.HasPrefix(rel, "..") {
+			return payloadProjectDir
+		}
+	}
+	p := currentDir
+	for {
+		if _, err := os.Stat(filepath.Join(p, ".git")); err == nil {
+			return p
+		}
+		parent := filepath.Dir(p)
+		if parent == p {
+			return ""
+		}
+		p = parent
+	}
+}
+
+// directoryDisplay returns the string shown on line 2 for the working directory.
+// Resolves a project root via resolveProjectRoot, then displays
+// "<root_base>" when current equals root, or "<root_base>/<relative>" when
+// current is a descendant. Falls back to filepath.Base(currentDir) when no
+// root is resolved. Returns "." for empty or "." current.
+func directoryDisplay(currentDir, projectDir string) string {
+	if currentDir == "" || currentDir == "." {
+		return "."
+	}
+	root := resolveProjectRoot(currentDir, projectDir)
+	if root == "" {
+		return filepath.Base(currentDir)
+	}
+	if currentDir == root {
+		return filepath.Base(root)
+	}
+	rel, err := filepath.Rel(root, currentDir)
+	if err != nil || rel == "." || rel == "" || strings.HasPrefix(rel, "..") {
+		return filepath.Base(currentDir)
+	}
+	return filepath.Base(root) + "/" + filepath.ToSlash(rel)
 }
 
 // ─── Rate limits ──────────────────────────────────────────────────────────────
@@ -255,7 +316,51 @@ func formatCountdown(resetsAt int64) string {
 	return fmt.Sprintf("(%dm)", mins)
 }
 
-func formatRate(label string, rl model.RateLimit) string {
+// Seven-day rate-limit window length in seconds.
+// Assumes Claude's rate_limits.seven_day is a fixed-bucket window — if that
+// assumption changes (e.g., rolling window), pace arrows become stale signals.
+const sevenDayWindowSeconds = int64(604800)
+
+// computePaceArrow returns a colored pace indicator for a seven_day rate
+// limit, or "" when no indicator should be shown. Over/under-pace cases include
+// an integer magnitude suffix "<N>%"; within-tolerance returns a neutral "≈".
+// Caller is responsible for passing only seven_day rate limits — the function
+// does not self-check label.
+func computePaceArrow(rl model.RateLimit, now time.Time, opts Options) string {
+	if !rl.Present || rl.ResetsAt == 0 {
+		return ""
+	}
+	remaining := rl.ResetsAt - now.Unix()
+	if remaining <= 0 {
+		return ""
+	}
+	// Suppress when < 10% of window time remains — expected_pct has saturated.
+	if remaining*10 < sevenDayWindowSeconds {
+		return ""
+	}
+	elapsed := sevenDayWindowSeconds - remaining
+	expectedPct := float64(elapsed) / float64(sevenDayWindowSeconds) * 100
+	deviation := rl.UsedPercentage - expectedPct
+	magnitude := int(math.Round(math.Abs(deviation)))
+	switch {
+	case deviation > 5:
+		if opts.ASCIIMode {
+			return fmt.Sprintf("^%d%%", magnitude)
+		}
+		return fmt.Sprintf("%s▲%d%%%s", ansiRed, magnitude, ansiReset)
+	case deviation < -5:
+		if opts.ASCIIMode {
+			return fmt.Sprintf("v%d%%", magnitude)
+		}
+		return fmt.Sprintf("%s▼%d%%%s", ansiGray, magnitude, ansiReset)
+	}
+	if opts.ASCIIMode {
+		return "~"
+	}
+	return ansiGray + "≈" + ansiReset
+}
+
+func formatRate(label string, rl model.RateLimit, now time.Time, opts Options) string {
 	if !rl.Present {
 		return ""
 	}
@@ -264,11 +369,19 @@ func formatRate(label string, rl model.RateLimit) string {
 	if pct >= 80 {
 		color = ansiRed
 	}
+	arrow := ""
+	if label == "7d" {
+		arrow = computePaceArrow(rl, now, opts)
+	}
+	arrowSegment := ""
+	if arrow != "" {
+		arrowSegment = " " + arrow
+	}
 	countdown := formatCountdown(rl.ResetsAt)
 	if countdown != "" {
-		return fmt.Sprintf("%s%s:%d%%%s %s", color, label, pct, ansiReset, countdown)
+		return fmt.Sprintf("%s%s:%d%%%s%s %s", color, label, pct, ansiReset, arrowSegment, countdown)
 	}
-	return fmt.Sprintf("%s%s:%d%%%s", color, label, pct, ansiReset)
+	return fmt.Sprintf("%s%s:%d%%%s%s", color, label, pct, ansiReset, arrowSegment)
 }
 
 // ─── Render ───────────────────────────────────────────────────────────────────
@@ -291,7 +404,7 @@ func Render(p *model.Payload, git GitInfo, opts Options) (line1, line2 string) {
 	}
 
 	// ── Context label ─────────────────────────────────────────────────────────
-	label := ctxLabel(p.ContextWindow.ContextWindowSize, p.Model.DisplayName)
+	label := ctxLabel(p.ContextWindow.ContextWindowSize, p.Model.DisplayName, p.ExceedsTokens200k)
 
 	// ── Cost ──────────────────────────────────────────────────────────────────
 	costFmt := fmt.Sprintf("%.2f", p.Cost.TotalCostUSD)
@@ -301,8 +414,9 @@ func Render(p *model.Payload, git GitInfo, opts Options) (line1, line2 string) {
 	durStr := formatDuration(p.Cost.TotalDurationMs)
 
 	// ── Rate limits ───────────────────────────────────────────────────────────
-	r5h := formatRate("5h", p.RateLimits.FiveHour)
-	r7d := formatRate("7d", p.RateLimits.SevenDay)
+	now := time.Now()
+	r5h := formatRate("5h", p.RateLimits.FiveHour, now, opts)
+	r7d := formatRate("7d", p.RateLimits.SevenDay, now, opts)
 
 	rateParts := []string{}
 	if r5h != "" {
@@ -354,12 +468,7 @@ func Render(p *model.Payload, git GitInfo, opts Options) (line1, line2 string) {
 	}
 
 	// Dirname
-	dir := p.Workspace.CurrentDir
-	if dir == "" || dir == "." {
-		dir = "."
-	} else {
-		dir = filepath.Base(dir)
-	}
+	dir := directoryDisplay(p.Workspace.CurrentDir, p.Workspace.ProjectDir)
 	parts = append(parts, ansiBlue+dir+ansiReset)
 
 	// Agent / Worktree indicator

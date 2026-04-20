@@ -51,6 +51,7 @@ type Payload struct {
 
 	Workspace struct {
 		CurrentDir string `json:"current_dir"`
+		ProjectDir string `json:"project_dir"`
 	} `json:"workspace"`
 
 	Worktree struct {
@@ -64,6 +65,8 @@ type Payload struct {
 	} `json:"agent"`
 
 	RateLimits RateLimits
+
+	ExceedsTokens200k bool `json:"exceeds_200k_tokens"`
 }
 
 // payloadJSON mirrors Payload but uses the raw rate-limit type for presence detection.
@@ -86,6 +89,7 @@ type payloadJSON struct {
 
 	Workspace struct {
 		CurrentDir string `json:"current_dir"`
+		ProjectDir string `json:"project_dir"`
 	} `json:"workspace"`
 
 	Worktree struct {
@@ -99,6 +103,8 @@ type payloadJSON struct {
 	} `json:"agent"`
 
 	RateLimits rateLimitsRaw `json:"rate_limits"`
+
+	ExceedsTokens200k bool `json:"exceeds_200k_tokens"`
 }
 
 // ParsePayload reads and parses a Claude Code JSON payload from r.
@@ -118,12 +124,13 @@ func ParsePayload(r io.Reader) (*Payload, error) {
 	}
 
 	p := &Payload{
-		Model:         raw.Model,
-		ContextWindow: raw.ContextWindow,
-		Cost:          raw.Cost,
-		Workspace:     raw.Workspace,
-		Worktree:      raw.Worktree,
-		Agent:         raw.Agent,
+		Model:             raw.Model,
+		ContextWindow:     raw.ContextWindow,
+		Cost:              raw.Cost,
+		Workspace:         raw.Workspace,
+		Worktree:          raw.Worktree,
+		Agent:             raw.Agent,
+		ExceedsTokens200k: raw.ExceedsTokens200k,
 	}
 
 	if raw.RateLimits.FiveHour != nil {

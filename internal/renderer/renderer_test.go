@@ -3,6 +3,7 @@ package renderer
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -383,6 +384,379 @@ func TestRenderContextLabel200k(t *testing.T) {
 	plain := stripANSI(line1)
 	if !strings.Contains(plain, "200k") {
 		t.Errorf("200k label missing, got: %q", plain)
+	}
+}
+
+// ─── Directory display (line 2) ──────────────────────────────────────────────
+
+func TestDirectoryDisplay_CurrentEqualsProject(t *testing.T) {
+	dir := filepath.Join(string(filepath.Separator)+"Users", "dev", "my-project")
+	got := directoryDisplay(dir, dir)
+	if got != "my-project" {
+		t.Errorf("current==project: got %q, want %q", got, "my-project")
+	}
+}
+
+func TestDirectoryDisplay_CurrentIsDescendant(t *testing.T) {
+	project := filepath.Join(string(filepath.Separator)+"Users", "dev", "my-project")
+	current := filepath.Join(project, "internal", "renderer")
+	got := directoryDisplay(current, project)
+	want := "my-project/internal/renderer"
+	if got != want {
+		t.Errorf("descendant: got %q, want %q", got, want)
+	}
+}
+
+func TestDirectoryDisplay_ProjectEmpty(t *testing.T) {
+	current := filepath.Join(string(filepath.Separator)+"Users", "dev", "my-project")
+	got := directoryDisplay(current, "")
+	if got != "my-project" {
+		t.Errorf("empty project: got %q, want %q", got, "my-project")
+	}
+}
+
+func TestDirectoryDisplay_CurrentEmpty(t *testing.T) {
+	got := directoryDisplay("", "")
+	if got != "." {
+		t.Errorf("empty current: got %q, want %q", got, ".")
+	}
+}
+
+func TestDirectoryDisplay_CurrentIsDot(t *testing.T) {
+	got := directoryDisplay(".", "")
+	if got != "." {
+		t.Errorf("current=.: got %q, want %q", got, ".")
+	}
+}
+
+func TestDirectoryDisplay_CurrentNotDescendant(t *testing.T) {
+	// current is outside project — fallback to base of current
+	project := filepath.Join(string(filepath.Separator)+"Users", "dev", "project-a")
+	current := filepath.Join(string(filepath.Separator)+"Users", "dev", "project-b")
+	got := directoryDisplay(current, project)
+	if got != "project-b" {
+		t.Errorf("non-descendant fallback: got %q, want %q", got, "project-b")
+	}
+}
+
+// ─── resolveProjectRoot via directoryDisplay: git-root fallback ──────────────
+
+func TestDirectoryDisplay_GitRootFromSubfolder(t *testing.T) {
+	// tmpDir/proj/.git/ (dir) + tmpDir/proj/sub/
+	tmp := t.TempDir()
+	proj := filepath.Join(tmp, "proj")
+	sub := filepath.Join(proj, "sub")
+	if err := os.MkdirAll(filepath.Join(proj, ".git"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(sub, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// payload's project_dir == current (Claude Code subfolder-start behavior)
+	got := directoryDisplay(sub, sub)
+	want := "proj/sub"
+	if got != want {
+		t.Errorf("git-root walk: got %q, want %q", got, want)
+	}
+}
+
+func TestDirectoryDisplay_GitRootAsFile(t *testing.T) {
+	// .git as a regular file (worktree / submodule-style structure)
+	tmp := t.TempDir()
+	proj := filepath.Join(tmp, "wt")
+	sub := filepath.Join(proj, "src")
+	if err := os.MkdirAll(sub, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(proj, ".git"), []byte("gitdir: /elsewhere\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	got := directoryDisplay(sub, sub)
+	want := "wt/src"
+	if got != want {
+		t.Errorf(".git-as-file: got %q, want %q", got, want)
+	}
+}
+
+func TestDirectoryDisplay_SubmoduleFirstGitWins(t *testing.T) {
+	// parent/.git (dir) + parent/sub/.git (file) + parent/sub/src/
+	// Expected: submodule (sub) wins; display is "sub/src", not "parent/sub/src"
+	tmp := t.TempDir()
+	parent := filepath.Join(tmp, "parent")
+	sub := filepath.Join(parent, "sub")
+	src := filepath.Join(sub, "src")
+	if err := os.MkdirAll(filepath.Join(parent, ".git"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(src, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(sub, ".git"), []byte("gitdir: ../.git/modules/sub\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	got := directoryDisplay(src, src)
+	want := "sub/src"
+	if got != want {
+		t.Errorf("submodule first-git-wins: got %q, want %q", got, want)
+	}
+}
+
+func TestDirectoryDisplay_NoGitFallbackToBase(t *testing.T) {
+	// Pure non-git directory tree → walk finds nothing → base name fallback
+	tmp := t.TempDir()
+	folder := filepath.Join(tmp, "standalone", "deep", "folder")
+	if err := os.MkdirAll(folder, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	got := directoryDisplay(folder, folder)
+	// May match base name OR (if a stray .git exists in ancestors of tmp) a
+	// "<root>/standalone/deep/folder" path. In the latter case, skip.
+	if got == "folder" {
+		return // expected path
+	}
+	if strings.HasSuffix(got, "/standalone/deep/folder") {
+		t.Skipf("ancestor of t.TempDir()=%q contains a .git entry; skipping (got=%q)", tmp, got)
+	}
+	t.Errorf("no-git fallback: got %q, want %q", got, "folder")
+}
+
+func TestDirectoryDisplay_PayloadAncestorBeatsGitWalk(t *testing.T) {
+	// Payload project_dir is a strict ancestor → use it, do NOT walk for .git.
+	// Setup: tmp/outer/inner/.git + tmp/outer/inner/src; payload=tmp/outer.
+	// Without the "payload wins" rule, walk would pick "inner" and show "inner/src".
+	// With the rule, result is "outer/inner/src".
+	tmp := t.TempDir()
+	outer := filepath.Join(tmp, "outer")
+	inner := filepath.Join(outer, "inner")
+	src := filepath.Join(inner, "src")
+	if err := os.MkdirAll(filepath.Join(inner, ".git"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(src, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	got := directoryDisplay(src, outer)
+	want := "outer/inner/src"
+	if got != want {
+		t.Errorf("payload-ancestor-wins: got %q, want %q", got, want)
+	}
+}
+
+func TestRenderLine2UsesProjectRelative(t *testing.T) {
+	// Use platform-appropriate paths via filepath.Join; JSON-escape backslashes.
+	project := filepath.Join(string(filepath.Separator)+"Users", "dev", "my-project")
+	current := filepath.Join(project, "internal", "renderer")
+	projectJSON := strings.ReplaceAll(project, `\`, `\\`)
+	currentJSON := strings.ReplaceAll(current, `\`, `\\`)
+	jsonSubdir := `{"model":{"display_name":"Claude Opus 4.6"},"context_window":{"used_percentage":42,"context_window_size":1000000},"cost":{"total_cost_usd":0.85,"total_duration_ms":222000},"workspace":{"current_dir":"` + currentJSON + `","project_dir":"` + projectJSON + `"}}`
+	p := mustParse(t, jsonSubdir)
+	_, line2 := renderWith(p, GitInfo{}, DefaultOptions())
+	plain := stripANSI(line2)
+	if !strings.Contains(plain, "my-project/internal/renderer") {
+		t.Errorf("line2 should show project-relative path, got: %q", plain)
+	}
+}
+
+// ─── 1M label color based on exceeds_200k_tokens ─────────────────────────────
+
+func TestRenderContextLabel1M_NotExceeding_IsGray(t *testing.T) {
+	// jsonNormal: 1M context, no exceeds_200k_tokens field → gray
+	p := mustParse(t, jsonNormal)
+	line1, _ := renderWith(p, GitInfo{}, DefaultOptions())
+	if !strings.Contains(line1, ansiGray+"1M") {
+		t.Errorf("1M without exceeds_200k_tokens should be gray, got: %q", line1)
+	}
+	if strings.Contains(line1, ansiRed+"1M") {
+		t.Errorf("1M without exceeds_200k_tokens should NOT be red, got: %q", line1)
+	}
+}
+
+func TestRenderContextLabel1M_Exceeding_IsRed(t *testing.T) {
+	jsonExceed := `{"model":{"display_name":"Claude Opus 4.6"},"context_window":{"used_percentage":42,"context_window_size":1000000},"cost":{"total_cost_usd":0.85,"total_duration_ms":222000},"workspace":{"current_dir":"/tmp/x"},"exceeds_200k_tokens":true}`
+	p := mustParse(t, jsonExceed)
+	line1, _ := renderWith(p, GitInfo{}, DefaultOptions())
+	if !strings.Contains(line1, ansiRed+"1M") {
+		t.Errorf("1M with exceeds_200k_tokens=true should be red, got: %q", line1)
+	}
+}
+
+func TestRenderContextLabel200k_ExceedsFlagIgnored(t *testing.T) {
+	// 200k label stays gray even if exceeds_200k_tokens is true
+	jsonExceed200k := `{"model":{"display_name":"Claude Sonnet 4.6"},"context_window":{"used_percentage":75,"context_window_size":200000},"cost":{"total_cost_usd":3.20,"total_duration_ms":725000},"workspace":{"current_dir":"/tmp/x"},"exceeds_200k_tokens":true}`
+	p := mustParse(t, jsonExceed200k)
+	line1, _ := renderWith(p, GitInfo{}, DefaultOptions())
+	if !strings.Contains(line1, ansiGray+"200k") {
+		t.Errorf("200k should remain gray regardless of exceeds flag, got: %q", line1)
+	}
+	if strings.Contains(line1, ansiRed+"200k") {
+		t.Errorf("200k should NOT be red, got: %q", line1)
+	}
+}
+
+// ─── Seven-day pace arrow unit tests ─────────────────────────────────────────
+
+// computePaceArrow uses a 604800-second (7-day) window. Tests anchor "now"
+// so the calculation is deterministic regardless of real clock.
+
+func TestComputePaceArrow_OverPace(t *testing.T) {
+	now := time.Unix(1_000_000_000, 0)
+	// elapsed = 2 days (172800s) → expected ≈ 28.57%; used=55 → deviation ≈ +26.43 → magnitude 26
+	resetsAt := now.Add(5 * 24 * time.Hour).Unix()
+	rl := model.RateLimit{UsedPercentage: 55, ResetsAt: resetsAt, Present: true}
+	got := computePaceArrow(rl, now, DefaultOptions())
+	if !strings.Contains(got, "▲26%") {
+		t.Errorf("over-pace should contain ▲26%%, got: %q", got)
+	}
+	if !strings.Contains(got, ansiRed) {
+		t.Errorf("over-pace should use ansiRed, got: %q", got)
+	}
+}
+
+func TestComputePaceArrow_UnderPace(t *testing.T) {
+	now := time.Unix(1_000_000_000, 0)
+	// elapsed = 2 days → expected ≈ 28.57%; used=20 → deviation ≈ -8.57 → magnitude 9
+	resetsAt := now.Add(5 * 24 * time.Hour).Unix()
+	rl := model.RateLimit{UsedPercentage: 20, ResetsAt: resetsAt, Present: true}
+	got := computePaceArrow(rl, now, DefaultOptions())
+	if !strings.Contains(got, "▼9%") {
+		t.Errorf("under-pace should contain ▼9%%, got: %q", got)
+	}
+	if !strings.Contains(got, ansiGray) {
+		t.Errorf("under-pace should use ansiGray, got: %q", got)
+	}
+}
+
+func TestComputePaceArrow_WithinTolerance(t *testing.T) {
+	now := time.Unix(1_000_000_000, 0)
+	// elapsed = 2 days → expected ≈ 28.57%; used=30 → deviation ≈ +1.43 (|dev|≤5) → ≈
+	resetsAt := now.Add(5 * 24 * time.Hour).Unix()
+	rl := model.RateLimit{UsedPercentage: 30, ResetsAt: resetsAt, Present: true}
+	got := computePaceArrow(rl, now, DefaultOptions())
+	if !strings.Contains(got, "≈") {
+		t.Errorf("within tolerance should contain ≈, got: %q", got)
+	}
+	if !strings.Contains(got, ansiGray) {
+		t.Errorf("within tolerance should use ansiGray, got: %q", got)
+	}
+	if strings.ContainsAny(got, "▲▼") {
+		t.Errorf("within tolerance should NOT contain an arrow, got: %q", got)
+	}
+}
+
+func TestComputePaceArrow_WithinToleranceBoundary(t *testing.T) {
+	// Exactly +5 and -5 deviation must still be "within tolerance" (not over/under-pace).
+	now := time.Unix(1_000_000_000, 0)
+	// elapsed = 2 days → expected ≈ 28.5714%
+	resetsAt := now.Add(5 * 24 * time.Hour).Unix()
+	const expected = 100.0 * 172800.0 / 604800.0 // ≈ 28.5714
+	for _, dev := range []float64{-5, 0, +5} {
+		rl := model.RateLimit{UsedPercentage: expected + dev, ResetsAt: resetsAt, Present: true}
+		got := computePaceArrow(rl, now, DefaultOptions())
+		if !strings.Contains(got, "≈") {
+			t.Errorf("boundary deviation %v should contain ≈, got: %q", dev, got)
+		}
+		if strings.ContainsAny(got, "▲▼") {
+			t.Errorf("boundary deviation %v should NOT contain an arrow, got: %q", dev, got)
+		}
+	}
+}
+
+func TestComputePaceArrow_NearReset(t *testing.T) {
+	now := time.Unix(1_000_000_000, 0)
+	// remaining = 60000s < 60480s (10% of 604800) → suppressed regardless of deviation
+	resetsAt := now.Unix() + 60000
+	rl := model.RateLimit{UsedPercentage: 99, ResetsAt: resetsAt, Present: true}
+	got := computePaceArrow(rl, now, DefaultOptions())
+	if got != "" {
+		t.Errorf("near-reset should suppress arrow, got: %q", got)
+	}
+}
+
+func TestComputePaceArrow_ResetsAtAbsent(t *testing.T) {
+	now := time.Unix(1_000_000_000, 0)
+	rl := model.RateLimit{UsedPercentage: 80, ResetsAt: 0, Present: true}
+	got := computePaceArrow(rl, now, DefaultOptions())
+	if got != "" {
+		t.Errorf("resets_at=0 should suppress arrow, got: %q", got)
+	}
+}
+
+func TestComputePaceArrow_ASCIIOverPace(t *testing.T) {
+	now := time.Unix(1_000_000_000, 0)
+	resetsAt := now.Add(5 * 24 * time.Hour).Unix()
+	rl := model.RateLimit{UsedPercentage: 55, ResetsAt: resetsAt, Present: true}
+	opts := DefaultOptions()
+	opts.ASCIIMode = true
+	got := computePaceArrow(rl, now, opts)
+	if got != "^26%" {
+		t.Errorf("ASCII over-pace should be '^26%%' with no color, got: %q", got)
+	}
+}
+
+func TestComputePaceArrow_ASCIIUnderPace(t *testing.T) {
+	now := time.Unix(1_000_000_000, 0)
+	resetsAt := now.Add(5 * 24 * time.Hour).Unix()
+	rl := model.RateLimit{UsedPercentage: 20, ResetsAt: resetsAt, Present: true}
+	opts := DefaultOptions()
+	opts.ASCIIMode = true
+	got := computePaceArrow(rl, now, opts)
+	if got != "v9%" {
+		t.Errorf("ASCII under-pace should be 'v9%%' with no color, got: %q", got)
+	}
+}
+
+func TestComputePaceArrow_ASCIIWithinTolerance(t *testing.T) {
+	now := time.Unix(1_000_000_000, 0)
+	// elapsed = 2 days → expected ≈ 28.57%; used=30 → deviation ≈ +1.43 → ~
+	resetsAt := now.Add(5 * 24 * time.Hour).Unix()
+	rl := model.RateLimit{UsedPercentage: 30, ResetsAt: resetsAt, Present: true}
+	opts := DefaultOptions()
+	opts.ASCIIMode = true
+	got := computePaceArrow(rl, now, opts)
+	if got != "~" {
+		t.Errorf("ASCII within tolerance should be '~' with no color, got: %q", got)
+	}
+}
+
+func TestRenderSevenDayOverPaceArrow(t *testing.T) {
+	// Integration: 7d over-pace should show "▲<N>%" between % and countdown.
+	// Use real-clock-based resetsAt that is ~5 days in the future.
+	// elapsed ≈ 2 days (~28.57% expected); used=55 → deviation ≈ +26.43 → magnitude 26.
+	resetsAt := time.Now().Add(5 * 24 * time.Hour).Unix()
+	jsonPace := fmt.Sprintf(`{"model":{"display_name":"Claude Opus 4.6"},"context_window":{"used_percentage":42,"context_window_size":1000000},"cost":{"total_cost_usd":0.85,"total_duration_ms":222000},"workspace":{"current_dir":"/tmp/x"},"rate_limits":{"seven_day":{"used_percentage":55,"resets_at":%d}}}`, resetsAt)
+	p := mustParse(t, jsonPace)
+	line1, _ := renderWith(p, GitInfo{}, DefaultOptions())
+	plain := stripANSI(line1)
+	if !strings.Contains(plain, "7d:55% ▲26%") {
+		t.Errorf("7d over-pace should render '7d:55%% ▲26%%', got: %q", plain)
+	}
+}
+
+func TestRenderSevenDayWithinToleranceApprox(t *testing.T) {
+	// Integration: 7d within tolerance should show " ≈" between % and countdown.
+	// elapsed ≈ 2 days (~28.57% expected); used=30 → deviation ≈ +1.43 (|dev|≤5) → ≈.
+	resetsAt := time.Now().Add(5 * 24 * time.Hour).Unix()
+	jsonPace := fmt.Sprintf(`{"model":{"display_name":"Claude Opus 4.6"},"context_window":{"used_percentage":42,"context_window_size":1000000},"cost":{"total_cost_usd":0.85,"total_duration_ms":222000},"workspace":{"current_dir":"/tmp/x"},"rate_limits":{"seven_day":{"used_percentage":30,"resets_at":%d}}}`, resetsAt)
+	p := mustParse(t, jsonPace)
+	line1, _ := renderWith(p, GitInfo{}, DefaultOptions())
+	plain := stripANSI(line1)
+	if !strings.Contains(plain, "7d:30% ≈") {
+		t.Errorf("7d within tolerance should render '7d:30%% ≈', got: %q", plain)
+	}
+	if strings.ContainsAny(plain, "▲▼") {
+		t.Errorf("within tolerance should NOT contain arrow, got: %q", plain)
+	}
+}
+
+func TestRenderFiveHourNeverShowsArrow(t *testing.T) {
+	// Even with over-pace-like usage, 5h never shows an arrow.
+	resetsAt := time.Now().Add(2 * time.Hour).Unix()
+	jsonPace := fmt.Sprintf(`{"model":{"display_name":"Claude Opus 4.6"},"context_window":{"used_percentage":42,"context_window_size":1000000},"cost":{"total_cost_usd":0.85,"total_duration_ms":222000},"workspace":{"current_dir":"/tmp/x"},"rate_limits":{"five_hour":{"used_percentage":90,"resets_at":%d}}}`, resetsAt)
+	p := mustParse(t, jsonPace)
+	line1, _ := renderWith(p, GitInfo{}, DefaultOptions())
+	plain := stripANSI(line1)
+	if strings.Contains(plain, "▲") || strings.Contains(plain, "▼") {
+		t.Errorf("5h should never have arrow, got: %q", plain)
 	}
 }
 
