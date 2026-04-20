@@ -9,8 +9,8 @@ A real-time status line for [Claude Code](https://docs.anthropic.com/en/docs/cla
 ## What You See
 
 ```
-◆ Sonnet 4.6 │ ████████░░ 78% │ $1.23 │ 14m32s │ 5h:85% (1h 23m) 7d:15%
-⎇ main* │ +84/-12 │ my-project │ ⚙ code-reviewer
+◆ Sonnet 4.6 │ ████████░░ 78% 1M │ $1.23 │ 14m32s │ 5h:85% (1h 23m) 7d:55% ▲7% (3d 9h)
+⎇ main* │ +84/-12 │ my-project/internal/renderer │ ⚙ code-reviewer
 ```
 
 ### Line 1
@@ -22,10 +22,11 @@ A real-time status line for [Claude Code](https://docs.anthropic.com/en/docs/cla
 | Progress bar | `████████░░` | 10-cell context window usage bar |
 | Percentage | `78%` | Context used. Green < 70%, yellow 70–89%, red ≥ 90% |
 | ⚠ warning | `⚠` | Appears only when context ≥ 90% |
-| Context size | `200k` / `1M` | Shown only when not already in the model name |
+| Context size | `200k` / `1M` | Shown only when not already in the model name. `1M` turns **red** when the session has crossed the 200k-token premium-pricing threshold (input 2×, output 1.5×) |
 | Cost | `$1.23` | Cumulative token cost this session (estimate). Yellow > $0, red ≥ $10, gray at $0.00 |
 | Duration | `14m32s` | Total session time. Hidden if under 1 second |
-| Rate limits | `5h:85% (1h 23m)` | 5-hour and 7-day quota usage (Claude Pro/Max only). Red when ≥ 80%. Countdown to reset appended when available: `(Xd Yh)` / `(Xh Ym)` / `(Ym)` / `(now)` |
+| Rate limits | `5h:85% (1h 23m) 7d:55% ▲7% (3d 9h)` | 5-hour and 7-day quota usage (Claude Pro/Max only). Red when ≥ 80%. Countdown to reset appended when available: `(Xd Yh)` / `(Xh Ym)` / `(Ym)` / `(now)` |
+| 7d pace | `▲7%` / `▼3%` / `≈` | Deviation from linear expected usage on the `seven_day` bucket. Red `▲<N>%` if over-pace > 5%, gray `▼<N>%` if under-pace > 5%, gray `≈` within ±5% tolerance. Suppressed when `< 10%` of the 7-day window remains or `resets_at` is missing. Never shown for the 5-hour bucket. ASCII fallbacks: `^<N>%` / `v<N>%` / `~` |
 
 ### Line 2
 
@@ -33,7 +34,7 @@ A real-time status line for [Claude Code](https://docs.anthropic.com/en/docs/cla
 |---------|---------|-------------|
 | Branch | `⎇ main*` | Current git branch. `*` means uncommitted changes |
 | Lines | `+84/-12` | Lines added/removed by Claude this session |
-| Directory | `my-project` | Current working directory name |
+| Directory | `my-project/internal/renderer` | Project root + relative path (forward slashes). Root resolves via three-step fallback: (1) `workspace.project_dir` if it is a strict ancestor of the current dir, (2) walk upward for a `.git` entry (file or directory), (3) fall back to the current directory's base name. Shows only the base name when the current dir equals the root |
 | Indicator | `⚙ code-reviewer` | Active subagent name, or `⚙ worktree:name` if in a git worktree. Worktree takes priority |
 
 Zero-value segments are hidden entirely (`+0/-0`, `0m0s`, missing rate limits).
