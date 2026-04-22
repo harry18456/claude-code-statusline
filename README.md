@@ -22,7 +22,7 @@ A real-time status line for [Claude Code](https://docs.anthropic.com/en/docs/cla
 | Progress bar | `████████░░` | 10-cell context window usage bar |
 | Percentage | `78%` | Context used. Green < 70%, yellow 70–89%, red ≥ 90% |
 | ⚠ warning | `⚠` | Appears only when context ≥ 90% |
-| Context size | `200k` / `1M` | Shown only when not already in the model name. `1M` turns **red** when the session has crossed the 200k-token premium-pricing threshold (input 2×, output 1.5×) |
+| Context size | `200k` / `1M` | Driven purely by the payload's `context_window_size` field. `1M` turns **red** when `exceeds_200k_tokens=true`, signalling the session has crossed the 200k-token premium-pricing threshold (input 2×, output 1.5×) |
 | Cost | `$1.23` | Cumulative token cost this session (estimate). Yellow > $0, red ≥ $10, gray at $0.00 |
 | Duration | `14m32s` | Total session time. Hidden if under 1 second |
 | Rate limits | `5h:85% (1h 23m) 7d:55% ▲7% (3d 9h)` | 5-hour and 7-day quota usage (Claude Pro/Max only). Red when ≥ 80%. Countdown to reset appended when available: `(Xd Yh)` / `(Xh Ym)` / `(Ym)` / `(now)` |

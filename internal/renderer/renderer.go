@@ -215,10 +215,6 @@ func formatDuration(ms int64) string {
 // ─── Context window label ─────────────────────────────────────────────────────
 
 func ctxLabel(size int64, modelName string, exceeds200k bool) string {
-	nameLower := strings.ToLower(modelName)
-	if strings.Contains(nameLower, "context") {
-		return ""
-	}
 	switch {
 	case size >= 1_000_000:
 		color := ansiGray

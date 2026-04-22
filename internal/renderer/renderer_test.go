@@ -212,21 +212,35 @@ func TestRenderContextLabel1M(t *testing.T) {
 	}
 }
 
-func TestRenderContextLabelSuppressedWhenInModelName(t *testing.T) {
+func TestRenderContextLabelNotSuppressedWhenModelNameContainsContext(t *testing.T) {
 	p := mustParse(t, jsonStartup) // "Opus 4.6 (1M context)"
 	line1, _ := renderWith(p, GitInfo{}, DefaultOptions())
 	plain := stripANSI(line1)
-	// Model name already contains "context" → no label
-	count := strings.Count(plain, "1M")
-	// The label "1M" should NOT appear (or only appear if it's in the model name itself)
-	// Model name is "Opus 4.6 (1M context)" — so "1M" appears in model name
-	// The label should NOT add another "1M"
-	_ = count
-	// Simpler: check that there's no standalone "1M" label separate from model name
-	// Strip model name from line and check
+	// Model name already contains "context", but label SHALL still be shown.
+	// Strip the model name substring so the remaining text must still contain "1M".
 	withoutModel := strings.Replace(plain, "Opus 4.6 (1M context)", "", 1)
-	if strings.Contains(withoutModel, "1M") {
-		t.Errorf("context label should be suppressed when model name contains 'context', remaining: %q", withoutModel)
+	if !strings.Contains(withoutModel, "1M") {
+		t.Errorf("context label must not be suppressed by model name substring; remaining: %q", withoutModel)
+	}
+}
+
+func TestCtxLabel_ModelNameContainsContextStillShows1M(t *testing.T) {
+	got := ctxLabel(1_000_000, "Opus 4.7 (1M context)", false)
+	if !strings.Contains(got, "1M") {
+		t.Errorf("ctxLabel should emit 1M even when modelName contains 'context', got: %q", got)
+	}
+	if !strings.Contains(got, ansiGray) {
+		t.Errorf("1M label should be gray when exceeds200k=false, got: %q", got)
+	}
+}
+
+func TestCtxLabel_ModelNameContainsContextRedWhenExceeds(t *testing.T) {
+	got := ctxLabel(1_000_000, "Opus 4.6 (1M context)", true)
+	if !strings.Contains(got, "1M") {
+		t.Errorf("ctxLabel should emit 1M even when modelName contains 'context', got: %q", got)
+	}
+	if !strings.Contains(got, ansiRed) {
+		t.Errorf("1M label should be red when exceeds200k=true, got: %q", got)
 	}
 }
 
