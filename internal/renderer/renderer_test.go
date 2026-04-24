@@ -675,14 +675,51 @@ func TestComputePaceArrow_WithinToleranceBoundary(t *testing.T) {
 	}
 }
 
-func TestComputePaceArrow_NearReset(t *testing.T) {
+func TestComputePaceArrow_NearResetOverPace(t *testing.T) {
 	now := time.Unix(1_000_000_000, 0)
-	// remaining = 60000s < 60480s (10% of 604800) → suppressed regardless of deviation
+	// remaining = 60000s < 60480s (10% of 604800); elapsed = 544800 → expected ≈ 90.0794%
+	// used = 99 → deviation ≈ +8.92 → magnitude 9 → ▲9%
 	resetsAt := now.Unix() + 60000
 	rl := model.RateLimit{UsedPercentage: 99, ResetsAt: resetsAt, Present: true}
 	got := computePaceArrow(rl, now, DefaultOptions())
-	if got != "" {
-		t.Errorf("near-reset should suppress arrow, got: %q", got)
+	if !strings.Contains(got, "▲9%") {
+		t.Errorf("near-reset over-pace should contain ▲9%%, got: %q", got)
+	}
+	if !strings.Contains(got, ansiRed) {
+		t.Errorf("near-reset over-pace should use ansiRed, got: %q", got)
+	}
+}
+
+func TestComputePaceArrow_NearResetUnderPace(t *testing.T) {
+	now := time.Unix(1_000_000_000, 0)
+	// remaining = 4500s (1h 15m) < 60480s; elapsed = 600300 → expected ≈ 99.256%
+	// used = 12 → deviation ≈ -87.26 → magnitude 87 → ▼87%
+	resetsAt := now.Unix() + 4500
+	rl := model.RateLimit{UsedPercentage: 12, ResetsAt: resetsAt, Present: true}
+	got := computePaceArrow(rl, now, DefaultOptions())
+	if !strings.Contains(got, "▼87%") {
+		t.Errorf("near-reset under-pace should contain ▼87%%, got: %q", got)
+	}
+	if !strings.Contains(got, ansiGray) {
+		t.Errorf("near-reset under-pace should use ansiGray, got: %q", got)
+	}
+}
+
+func TestComputePaceArrow_NearResetWithinTolerance(t *testing.T) {
+	now := time.Unix(1_000_000_000, 0)
+	// remaining = 60000s < 60480s; elapsed = 544800 → expected ≈ 90.0794%
+	// used = 88 → deviation ≈ -2.08 (|dev| ≤ 5) → ≈
+	resetsAt := now.Unix() + 60000
+	rl := model.RateLimit{UsedPercentage: 88, ResetsAt: resetsAt, Present: true}
+	got := computePaceArrow(rl, now, DefaultOptions())
+	if !strings.Contains(got, "≈") {
+		t.Errorf("near-reset within tolerance should contain ≈, got: %q", got)
+	}
+	if !strings.Contains(got, ansiGray) {
+		t.Errorf("near-reset within tolerance should use ansiGray, got: %q", got)
+	}
+	if strings.ContainsAny(got, "▲▼") {
+		t.Errorf("near-reset within tolerance should NOT contain an arrow, got: %q", got)
 	}
 }
 

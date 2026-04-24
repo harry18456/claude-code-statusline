@@ -312,9 +312,9 @@ func formatCountdown(resetsAt int64) string {
 	return fmt.Sprintf("(%dm)", mins)
 }
 
-// Seven-day rate-limit window length in seconds.
-// Assumes Claude's rate_limits.seven_day is a fixed-bucket window — if that
-// assumption changes (e.g., rolling window), pace arrows become stale signals.
+// Seven-day rate-limit window length in seconds. Used only to derive
+// expected_pct and deviation; the pace indicator is shown for the entire
+// window as long as resets_at is present and has not elapsed.
 const sevenDayWindowSeconds = int64(604800)
 
 // computePaceArrow returns a colored pace indicator for a seven_day rate
@@ -328,10 +328,6 @@ func computePaceArrow(rl model.RateLimit, now time.Time, opts Options) string {
 	}
 	remaining := rl.ResetsAt - now.Unix()
 	if remaining <= 0 {
-		return ""
-	}
-	// Suppress when < 10% of window time remains — expected_pct has saturated.
-	if remaining*10 < sevenDayWindowSeconds {
 		return ""
 	}
 	elapsed := sevenDayWindowSeconds - remaining
