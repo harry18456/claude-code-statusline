@@ -653,12 +653,12 @@ func TestComputePaceArrow_DayBoundaryStepUp(t *testing.T) {
 	// So a fixed used should jump category as elapsed crosses 86400.
 	now := time.Unix(1_000_000_000, 0)
 
-	// Exactly at boundary: used=14 → dev ≈ -0.29 → ≈
+	// Exactly at boundary: used=14 → dev ≈ -0.29 → magnitude floor → ▼1%
 	resetsAtExact := now.Unix() + 604800 - 86400
 	rlExact := model.RateLimit{UsedPercentage: 14, ResetsAt: resetsAtExact, Present: true}
 	gotExact := computePaceArrow(rlExact, now, DefaultOptions())
-	if !strings.Contains(gotExact, "≈") {
-		t.Errorf("at boundary elapsed=86400 with used=14 should contain ≈, got: %q", gotExact)
+	if !strings.Contains(gotExact, "▼1%") {
+		t.Errorf("at boundary elapsed=86400 with used=14 should contain ▼1%% (magnitude floor), got: %q", gotExact)
 	}
 
 	// Just past boundary: used=14 → dev ≈ -14.57 → ▼15%
@@ -734,38 +734,97 @@ func TestComputePaceArrow_UnderPace(t *testing.T) {
 	}
 }
 
-func TestComputePaceArrow_WithinTolerance(t *testing.T) {
+func TestComputePaceArrow_ExactMatch(t *testing.T) {
+	// Zero-tolerance regime: ≈ only on exact deviation == 0.
+	// elapsed_days=2 → expected = 2 * (100/7); set used to the same float so dev = 0.
 	now := time.Unix(1_000_000_000, 0)
-	// elapsed_days=2 → expected ≈ 28.5714; used=30 → deviation ≈ +1.43 (|dev|≤5) → ≈
 	resetsAt := now.Add(5 * 24 * time.Hour).Unix()
-	rl := model.RateLimit{UsedPercentage: 30, ResetsAt: resetsAt, Present: true}
+	const expected = 2 * (100.0 / 7.0) // ≈ 28.5714
+	rl := model.RateLimit{UsedPercentage: expected, ResetsAt: resetsAt, Present: true}
 	got := computePaceArrow(rl, now, DefaultOptions())
 	if !strings.Contains(got, "≈") {
-		t.Errorf("within tolerance should contain ≈, got: %q", got)
+		t.Errorf("exact match (dev=0) should contain ≈, got: %q", got)
 	}
 	if !strings.Contains(got, ansiGray) {
-		t.Errorf("within tolerance should use ansiGray, got: %q", got)
+		t.Errorf("exact match should use ansiGray, got: %q", got)
 	}
 	if strings.ContainsAny(got, "▲▼") {
-		t.Errorf("within tolerance should NOT contain an arrow, got: %q", got)
+		t.Errorf("exact match should NOT contain an arrow, got: %q", got)
 	}
 }
 
-func TestComputePaceArrow_WithinToleranceBoundary(t *testing.T) {
-	// Exactly +5 and -5 deviation must still be "within tolerance" (not over/under-pace).
+func TestComputePaceArrow_FivePercentBoundary(t *testing.T) {
+	// Under zero tolerance, dev = +5 / -5 are no longer "within tolerance":
+	// dev=-5 → ▼5%, dev=0 → ≈, dev=+5 → ▲5%. Verify each branch separately.
 	now := time.Unix(1_000_000_000, 0)
-	// elapsed_days=2 → expected = 2 * (100/7) ≈ 28.5714
 	resetsAt := now.Add(5 * 24 * time.Hour).Unix()
 	const expected = 2 * (100.0 / 7.0) // ≈ 28.5714
-	for _, dev := range []float64{-5, 0, +5} {
-		rl := model.RateLimit{UsedPercentage: expected + dev, ResetsAt: resetsAt, Present: true}
-		got := computePaceArrow(rl, now, DefaultOptions())
-		if !strings.Contains(got, "≈") {
-			t.Errorf("boundary deviation %v should contain ≈, got: %q", dev, got)
-		}
-		if strings.ContainsAny(got, "▲▼") {
-			t.Errorf("boundary deviation %v should NOT contain an arrow, got: %q", dev, got)
-		}
+
+	rlNeg := model.RateLimit{UsedPercentage: expected - 5, ResetsAt: resetsAt, Present: true}
+	gotNeg := computePaceArrow(rlNeg, now, DefaultOptions())
+	if !strings.Contains(gotNeg, "▼5%") {
+		t.Errorf("dev=-5 should render ▼5%%, got: %q", gotNeg)
+	}
+
+	rlZero := model.RateLimit{UsedPercentage: expected, ResetsAt: resetsAt, Present: true}
+	gotZero := computePaceArrow(rlZero, now, DefaultOptions())
+	if !strings.Contains(gotZero, "≈") {
+		t.Errorf("dev=0 should render ≈, got: %q", gotZero)
+	}
+
+	rlPos := model.RateLimit{UsedPercentage: expected + 5, ResetsAt: resetsAt, Present: true}
+	gotPos := computePaceArrow(rlPos, now, DefaultOptions())
+	if !strings.Contains(gotPos, "▲5%") {
+		t.Errorf("dev=+5 should render ▲5%%, got: %q", gotPos)
+	}
+}
+
+func TestComputePaceArrow_WithinOldToleranceNowOverPace(t *testing.T) {
+	// Zero-tolerance regime: dev in (0, 5] now produces ▲<N>% (was ≈).
+	// elapsed_days=2 → expected ≈ 28.5714; used=30 → dev ≈ +1.43 → magnitude 1 → ▲1%.
+	now := time.Unix(1_000_000_000, 0)
+	resetsAt := now.Add(5 * 24 * time.Hour).Unix()
+	rl := model.RateLimit{UsedPercentage: 30, ResetsAt: resetsAt, Present: true}
+	got := computePaceArrow(rl, now, DefaultOptions())
+	if !strings.Contains(got, "▲1%") {
+		t.Errorf("dev≈+1.43 under zero tolerance should contain ▲1%%, got: %q", got)
+	}
+	if strings.Contains(got, "≈") {
+		t.Errorf("dev≈+1.43 under zero tolerance should NOT contain ≈, got: %q", got)
+	}
+}
+
+func TestComputePaceArrow_WithinOldToleranceNowUnderPace(t *testing.T) {
+	// Zero-tolerance regime: dev in [-5, 0) now produces ▼<N>% (was ≈).
+	// elapsed_days=2 → expected ≈ 28.5714; used=27 → dev ≈ -1.57 → magnitude 2 → ▼2% gray.
+	now := time.Unix(1_000_000_000, 0)
+	resetsAt := now.Add(5 * 24 * time.Hour).Unix()
+	rl := model.RateLimit{UsedPercentage: 27, ResetsAt: resetsAt, Present: true}
+	got := computePaceArrow(rl, now, DefaultOptions())
+	if !strings.Contains(got, "▼2%") {
+		t.Errorf("dev≈-1.57 under zero tolerance should contain ▼2%%, got: %q", got)
+	}
+	if !strings.Contains(got, ansiGray) {
+		t.Errorf("under-pace should use ansiGray, got: %q", got)
+	}
+	if strings.Contains(got, "≈") {
+		t.Errorf("dev≈-1.57 under zero tolerance should NOT contain ≈, got: %q", got)
+	}
+}
+
+func TestComputePaceArrow_MagnitudeFloorAtOne(t *testing.T) {
+	// |deviation| < 0.5 but non-zero → magnitude floors to 1, not 0.
+	// elapsed_days=2 → expected ≈ 28.5714; used=29 → dev ≈ +0.43 (|dev| < 0.5).
+	// Without the floor, round(0.43) = 0 → would render "▲0%". With floor: ▲1%.
+	now := time.Unix(1_000_000_000, 0)
+	resetsAt := now.Add(5 * 24 * time.Hour).Unix()
+	rl := model.RateLimit{UsedPercentage: 29, ResetsAt: resetsAt, Present: true}
+	got := computePaceArrow(rl, now, DefaultOptions())
+	if !strings.Contains(got, "▲1%") {
+		t.Errorf("magnitude floor: dev≈+0.43 should render ▲1%%, got: %q", got)
+	}
+	if strings.Contains(got, "▲0%") || strings.Contains(got, "▼0%") {
+		t.Errorf("magnitude must never render as 0%%, got: %q", got)
 	}
 }
 
@@ -805,18 +864,18 @@ func TestComputePaceArrow_NearResetWithinTolerance(t *testing.T) {
 	now := time.Unix(1_000_000_000, 0)
 	// remaining = 60000s < 60480s; elapsed = 544800 → ceil(544800/86400)=7
 	// → elapsed_days=7 → expected = 100
-	// used = 98 → deviation = -2 (|dev| ≤ 5) → ≈
+	// used = 98 → deviation = -2 → magnitude 2 → ▼2% (zero tolerance, was ≈)
 	resetsAt := now.Unix() + 60000
 	rl := model.RateLimit{UsedPercentage: 98, ResetsAt: resetsAt, Present: true}
 	got := computePaceArrow(rl, now, DefaultOptions())
-	if !strings.Contains(got, "≈") {
-		t.Errorf("near-reset within tolerance should contain ≈, got: %q", got)
+	if !strings.Contains(got, "▼2%") {
+		t.Errorf("near-reset under-pace dev=-2 should contain ▼2%%, got: %q", got)
 	}
 	if !strings.Contains(got, ansiGray) {
-		t.Errorf("near-reset within tolerance should use ansiGray, got: %q", got)
+		t.Errorf("near-reset under-pace should use ansiGray, got: %q", got)
 	}
-	if strings.ContainsAny(got, "▲▼") {
-		t.Errorf("near-reset within tolerance should NOT contain an arrow, got: %q", got)
+	if strings.Contains(got, "≈") {
+		t.Errorf("near-reset under-pace dev=-2 should NOT contain ≈ (zero tolerance), got: %q", got)
 	}
 }
 
@@ -853,16 +912,30 @@ func TestComputePaceArrow_ASCIIUnderPace(t *testing.T) {
 	}
 }
 
-func TestComputePaceArrow_ASCIIWithinTolerance(t *testing.T) {
+func TestComputePaceArrow_ASCIIWithinOldToleranceNowOverPace(t *testing.T) {
+	// Zero-tolerance regime: dev≈+1.43 in ASCII mode now produces ^1% (was ~).
 	now := time.Unix(1_000_000_000, 0)
-	// elapsed = 2 days → expected ≈ 28.57%; used=30 → deviation ≈ +1.43 → ~
 	resetsAt := now.Add(5 * 24 * time.Hour).Unix()
 	rl := model.RateLimit{UsedPercentage: 30, ResetsAt: resetsAt, Present: true}
 	opts := DefaultOptions()
 	opts.ASCIIMode = true
 	got := computePaceArrow(rl, now, opts)
+	if got != "^1%" {
+		t.Errorf("ASCII over-pace dev≈+1.43 should be '^1%%' with no color, got: %q", got)
+	}
+}
+
+func TestComputePaceArrow_ASCIIExactMatch(t *testing.T) {
+	// ASCII exact-match: dev=0 → "~" (no color, no magnitude).
+	now := time.Unix(1_000_000_000, 0)
+	resetsAt := now.Add(5 * 24 * time.Hour).Unix()
+	const expected = 2 * (100.0 / 7.0)
+	rl := model.RateLimit{UsedPercentage: expected, ResetsAt: resetsAt, Present: true}
+	opts := DefaultOptions()
+	opts.ASCIIMode = true
+	got := computePaceArrow(rl, now, opts)
 	if got != "~" {
-		t.Errorf("ASCII within tolerance should be '~' with no color, got: %q", got)
+		t.Errorf("ASCII exact match should be '~' with no color, got: %q", got)
 	}
 }
 
@@ -882,20 +955,21 @@ func TestRenderSevenDayOverPaceArrow(t *testing.T) {
 	}
 }
 
-func TestRenderSevenDayWithinToleranceApprox(t *testing.T) {
-	// Integration: 7d within tolerance should show " ≈" between % and countdown.
+func TestRenderSevenDayMagnitudeFloorRendersArrow(t *testing.T) {
+	// Integration: with zero tolerance + magnitude floor, even tiny non-zero deviation
+	// must render an arrow with magnitude ≥ 1.
 	// Mid day-3 setup (4.5 days remaining): elapsed_days=3 → expected ≈ 42.86;
-	// used=43 → deviation ≈ +0.14 (|dev|≤5) → ≈.
+	// used=43 → deviation ≈ +0.14 → magnitude floor → ▲1%.
 	resetsAt := time.Now().Add(4*24*time.Hour + 12*time.Hour).Unix()
 	jsonPace := fmt.Sprintf(`{"model":{"display_name":"Claude Opus 4.6"},"context_window":{"used_percentage":42,"context_window_size":1000000},"cost":{"total_cost_usd":0.85,"total_duration_ms":222000},"workspace":{"current_dir":"/tmp/x"},"rate_limits":{"seven_day":{"used_percentage":43,"resets_at":%d}}}`, resetsAt)
 	p := mustParse(t, jsonPace)
 	line1, _ := renderWith(p, GitInfo{}, DefaultOptions())
 	plain := stripANSI(line1)
-	if !strings.Contains(plain, "7d:43% ≈") {
-		t.Errorf("7d within tolerance should render '7d:43%% ≈', got: %q", plain)
+	if !strings.Contains(plain, "7d:43% ▲1%") {
+		t.Errorf("7d magnitude floor should render '7d:43%% ▲1%%', got: %q", plain)
 	}
-	if strings.ContainsAny(plain, "▲▼") {
-		t.Errorf("within tolerance should NOT contain arrow, got: %q", plain)
+	if strings.Contains(plain, "≈") {
+		t.Errorf("non-zero deviation should NOT contain ≈ under zero tolerance, got: %q", plain)
 	}
 }
 

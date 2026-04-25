@@ -322,8 +322,9 @@ const sevenDayWindowSeconds = int64(604800)
 const dayLengthSeconds = int64(86400)
 
 // computePaceArrow returns a colored pace indicator for a seven_day rate
-// limit, or "" when no indicator should be shown. Over/under-pace cases include
-// an integer magnitude suffix "<N>%"; within-tolerance returns a neutral "≈".
+// limit, or "" when no indicator should be shown. Any non-zero deviation
+// produces a directional arrow with magnitude floored at 1; the neutral "≈"
+// only appears on exact deviation == 0 (rare).
 // Caller is responsible for passing only seven_day rate limits — the function
 // does not self-check label.
 func computePaceArrow(rl model.RateLimit, now time.Time, opts Options) string {
@@ -339,13 +340,16 @@ func computePaceArrow(rl model.RateLimit, now time.Time, opts Options) string {
 	expectedPct := float64(elapsedDays) * (100.0 / 7.0)
 	deviation := rl.UsedPercentage - expectedPct
 	magnitude := int(math.Round(math.Abs(deviation)))
+	if magnitude == 0 && deviation != 0 {
+		magnitude = 1
+	}
 	switch {
-	case deviation > 5:
+	case deviation > 0:
 		if opts.ASCIIMode {
 			return fmt.Sprintf("^%d%%", magnitude)
 		}
 		return fmt.Sprintf("%s▲%d%%%s", ansiRed, magnitude, ansiReset)
-	case deviation < -5:
+	case deviation < 0:
 		if opts.ASCIIMode {
 			return fmt.Sprintf("v%d%%", magnitude)
 		}
