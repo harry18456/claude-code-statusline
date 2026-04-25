@@ -46,4 +46,4 @@
 
 - [x] 5.1 對 `internal/renderer/renderer.go` 的 `computePaceArrow` 變更區塊執行 `/spectra:audit`，重點檢查 `math.Ceil` 浮點 → int64 轉型、elapsed_days clamp 邊界、`100.0/7.0` 浮點精度是否引入 silent failure（inline 三視角審查通過：Scoundrel/Lazy/Confused 無新增 sharp edges；遇異常未來 resets_at 的負 elapsed 處理為既有行為，不在本 change scope）
 - [x] 5.2 檢視 `README.md` 與 `README.zh-TW.md` 描述 `Seven-day usage pace indicator` 的段落，把「linear expected usage」改為「daily linear expected usage（每日線性預期）」並補充「跳階對齊 reset 鐘點，非日曆午夜」一句
-- [ ] 5.3 撰寫 en-us commit message 並標明 BREAKING：`feat(renderer): switch 7d pace expected_pct to daily granularity`，body 說明使用者體驗變更與 design 連結
+- [x] 5.3 撰寫 en-us commit message 並標明 BREAKING：`feat(renderer): switch 7d pace expected_pct to daily granularity`，body 說明使用者體驗變更與 design 連結
