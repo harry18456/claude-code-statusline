@@ -317,6 +317,10 @@ func formatCountdown(resetsAt int64) string {
 // window as long as resets_at is present and has not elapsed.
 const sevenDayWindowSeconds = int64(604800)
 
+// One day in seconds. expected_pct uses day-level granularity:
+// elapsed_days = ceil(elapsed / dayLengthSeconds), clamped to [0, 7].
+const dayLengthSeconds = int64(86400)
+
 // computePaceArrow returns a colored pace indicator for a seven_day rate
 // limit, or "" when no indicator should be shown. Over/under-pace cases include
 // an integer magnitude suffix "<N>%"; within-tolerance returns a neutral "≈".
@@ -331,7 +335,8 @@ func computePaceArrow(rl model.RateLimit, now time.Time, opts Options) string {
 		return ""
 	}
 	elapsed := sevenDayWindowSeconds - remaining
-	expectedPct := float64(elapsed) / float64(sevenDayWindowSeconds) * 100
+	elapsedDays := min(int64(math.Ceil(float64(elapsed)/float64(dayLengthSeconds))), int64(7))
+	expectedPct := float64(elapsedDays) * (100.0 / 7.0)
 	deviation := rl.UsedPercentage - expectedPct
 	magnitude := int(math.Round(math.Abs(deviation)))
 	switch {

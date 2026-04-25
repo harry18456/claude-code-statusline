@@ -26,7 +26,7 @@ A real-time status line for [Claude Code](https://docs.anthropic.com/en/docs/cla
 | Cost | `$1.23` | Cumulative token cost this session (estimate). Yellow > $0, red ≥ $10, gray at $0.00 |
 | Duration | `14m32s` | Total session time. Hidden if under 1 second |
 | Rate limits | `5h:85% (1h 23m) 7d:55% ▲7% (3d 9h)` | 5-hour and 7-day quota usage (Claude Pro/Max only). Red when ≥ 80%. Countdown to reset appended when available: `(Xd Yh)` / `(Xh Ym)` / `(Ym)` / `(now)` |
-| 7d pace | `▲7%` / `▼3%` / `≈` | Deviation from linear expected usage on the `seven_day` bucket. Red `▲<N>%` if over-pace > 5%, gray `▼<N>%` if under-pace > 5%, gray `≈` within ±5% tolerance. Suppressed when `< 10%` of the 7-day window remains or `resets_at` is missing. Never shown for the 5-hour bucket. ASCII fallbacks: `^<N>%` / `v<N>%` / `~` |
+| 7d pace | `▲7%` / `▼3%` / `≈` | Deviation from daily linear expected usage on the `seven_day` bucket: `expected = ceil(elapsed / 1 day) × (100/7)`, so day 1 expects 14.29%, day 2 expects 28.57%, … day 7 expects 100%. Step boundaries align with the `resets_at` clock time, not calendar midnight. Red `▲<N>%` if over-pace > 5%, gray `▼<N>%` if under-pace > 5%, gray `≈` within ±5% tolerance. Suppressed only when `resets_at` is missing or the window has already elapsed. Never shown for the 5-hour bucket. ASCII fallbacks: `^<N>%` / `v<N>%` / `~` |
 
 ### Line 2
 
