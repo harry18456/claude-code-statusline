@@ -32,4 +32,4 @@
   - `used=80` + `resets_at = now + 3d 12h`（mid day-4，dev≈+22.86）→ `7d:80% ▲23%` 紅色（regression：大偏差行為不變）
   - `five_hour.used=99` + `seven_day` 缺省 → 5h 無 pace indicator（regression）
 - [x] 3.2 更新 `README.md` 與 `README.zh-TW.md` 描述 `Seven-day usage pace indicator` 段落：移除「±5% tolerance」/「偏離 ≤ 5% 顯示 ≈」字句，改為「任何非零偏差顯示 `▲<N>%` 或 `▼<N>%`；`≈` 僅在偏差為零時出現（極罕見）」
-- [ ] 3.3 撰寫 en-us commit message：`refactor(renderer): drop pace tolerance, always show directional indicator`，body 說明 v1.5.0 → v1.5.1 微調動機（使用者反饋 `≈` 缺乏行動性）與 magnitude floor=1 設計
+- [x] 3.3 撰寫 en-us commit message：`refactor(renderer): drop pace tolerance, always show directional indicator`，body 說明 v1.5.0 → v1.5.1 微調動機（使用者反饋 `≈` 缺乏行動性）與 magnitude floor=1 設計

@@ -102,32 +102,39 @@ elapsed               = window_length_seconds - (resets_at - now)
 elapsed_days          = min(7, ceil(elapsed / day_seconds))
 expected_pct          = elapsed_days * (100 / 7)
 deviation             = used_percentage - expected_pct
-magnitude             = round(abs(deviation))   // nearest integer
+magnitude             = max(1, round(abs(deviation)))   // floor at 1 when deviation != 0
 ```
 
 The `expected_pct` SHALL step at integer multiples of `day_seconds` measured from window start (where window start equals `resets_at - 604800`). The step boundaries SHALL align with the `resets_at` clock time, NOT with calendar midnight. The `expected_pct` SHALL equal `0` only at the exact instant `elapsed = 0`; for any `elapsed >= 1` second the program SHALL treat the user as being inside day 1 and use `expected_pct = 100/7 ≈ 14.2857`.
+
+The pace indicator SHALL use a zero tolerance threshold: any non-zero deviation SHALL produce a directional arrow (`▲` or `▼`). The neutral `≈` symbol SHALL be reserved for the exact `deviation == 0` case, which is theoretically reachable only when `used_percentage` happens to equal `expected_pct` exactly (extremely rare in practice given that `expected_pct = elapsed_days × 100/7` is never an integer for `elapsed_days ∈ [1, 6]`).
 
 When a magnitude is shown, it SHALL be formatted as `<N>%` where `<N>` is `magnitude` as an integer (no decimal point, no padding).
 
 #### Scenario: Seven-day over-pace
 
-- **WHEN** `seven_day.resets_at` is non-zero AND `(resets_at - now)` is greater than zero AND `deviation > 5`
-- **THEN** the program SHALL append ` ▲<N>%` (single space + red solid-up triangle + integer magnitude + percent sign) after the `seven_day` percentage and before the countdown (e.g., `7d:70% ▲13% (3d 23h)` when `elapsed_days = 4`, `expected_pct ≈ 57.14`)
+- **WHEN** `seven_day.resets_at` is non-zero AND `(resets_at - now)` is greater than zero AND `deviation > 0`
+- **THEN** the program SHALL append ` ▲<N>%` (single space + red solid-up triangle + integer magnitude + percent sign) after the `seven_day` percentage and before the countdown (e.g., `7d:60% ▲3% (3d 23h)` when `elapsed_days = 4`, `expected_pct ≈ 57.14`, `deviation ≈ +2.86` → `magnitude = 3`)
 
 #### Scenario: Seven-day under-pace
 
-- **WHEN** `seven_day.resets_at` is non-zero AND `(resets_at - now)` is greater than zero AND `deviation < -5`
-- **THEN** the program SHALL append ` ▼<N>%` (single space + gray solid-down triangle + integer magnitude + percent sign) after the `seven_day` percentage and before the countdown (e.g., `7d:40% ▼17% (3d 23h)` when `elapsed_days = 4`, `expected_pct ≈ 57.14`)
+- **WHEN** `seven_day.resets_at` is non-zero AND `(resets_at - now)` is greater than zero AND `deviation < 0`
+- **THEN** the program SHALL append ` ▼<N>%` (single space + gray solid-down triangle + integer magnitude + percent sign) after the `seven_day` percentage and before the countdown (e.g., `7d:10% ▼4% (6d 16h)` when `elapsed_days = 1`, `expected_pct ≈ 14.29`, `deviation ≈ -4.29` → `magnitude = 4`)
 
-#### Scenario: Seven-day within tolerance
+#### Scenario: Seven-day exact match
 
-- **WHEN** `seven_day.resets_at` is non-zero AND `(resets_at - now)` is greater than zero AND the absolute value of `deviation` is at most 5
-- **THEN** the program SHALL append ` ≈` (single space + gray approximately-equal sign, no magnitude) after the `seven_day` percentage and before the countdown (e.g., `7d:60% ≈ (3d 23h)` when `elapsed_days = 4`, `expected_pct ≈ 57.14`)
+- **WHEN** `seven_day.resets_at` is non-zero AND `(resets_at - now)` is greater than zero AND `deviation == 0`
+- **THEN** the program SHALL append ` ≈` (single space + gray approximately-equal sign, no magnitude) after the `seven_day` percentage and before the countdown
 
 #### Scenario: Seven-day day-1 under-pace example
 
 - **WHEN** `seven_day.resets_at` is non-zero AND `elapsed` is between 1 and 86400 seconds (inclusive at 86400) AND `used_percentage` is `6`
 - **THEN** `elapsed_days` SHALL equal `1`, `expected_pct` SHALL be approximately `14.29`, `deviation` SHALL be approximately `-8.29`, and the program SHALL append ` ▼8%` after the `seven_day` percentage
+
+#### Scenario: Seven-day magnitude floor at 1
+
+- **WHEN** `(resets_at - now)` is greater than zero AND `deviation` is non-zero AND `round(abs(deviation))` would equal `0` (i.e., `abs(deviation) < 0.5`)
+- **THEN** `magnitude` SHALL be set to `1` AND the program SHALL append ` ▲1%` (when `deviation > 0`) or ` ▼1%` (when `deviation < 0`); the program SHALL NOT display ` ▲0%` or ` ▼0%`
 
 #### Scenario: Seven-day day boundary step-up
 
@@ -137,7 +144,7 @@ When a magnitude is shown, it SHALL be formatted as `<N>%` where `<N>` is `magni
 #### Scenario: Seven-day near-reset still shown
 
 - **WHEN** `seven_day.resets_at` is non-zero AND `(resets_at - now)` is less than 60480 seconds (less than 10% of the 604800-second window)
-- **THEN** the program SHALL still compute and append the pace indicator using the same formulas and thresholds as the over-pace, under-pace, and within-tolerance scenarios (e.g., `7d:12% ▼88% (1h 15m)` when `elapsed_days = 7`, `expected_pct = 100`)
+- **THEN** the program SHALL still compute and append the pace indicator using the same formulas and zero-tolerance branching as the over-pace and under-pace scenarios (e.g., `7d:12% ▼88% (1h 15m)` when `elapsed_days = 7`, `expected_pct = 100`)
 
 #### Scenario: Seven-day elapsed_days capped at 7
 
