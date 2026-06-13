@@ -1,10 +1,88 @@
 package model
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
 )
+
+type tolerantInt64 int64
+
+func (t *tolerantInt64) UnmarshalJSON(b []byte) error {
+	*t = 0
+	if bytes.Equal(bytes.TrimSpace(b), []byte("null")) {
+		return nil
+	}
+
+	var i int64
+	if err := json.Unmarshal(b, &i); err == nil {
+		*t = tolerantInt64(i)
+		return nil
+	}
+
+	var f float64
+	if err := json.Unmarshal(b, &f); err == nil {
+		*t = tolerantInt64(int64(f))
+		return nil
+	}
+
+	return nil
+}
+
+type ContextWindow struct {
+	UsedPercentage    float64 `json:"used_percentage"`
+	ContextWindowSize int64   `json:"context_window_size"`
+}
+
+func (c *ContextWindow) UnmarshalJSON(b []byte) error {
+	if bytes.Equal(bytes.TrimSpace(b), []byte("null")) {
+		*c = ContextWindow{}
+		return nil
+	}
+
+	var raw struct {
+		UsedPercentage    float64       `json:"used_percentage"`
+		ContextWindowSize tolerantInt64 `json:"context_window_size"`
+	}
+	if err := json.Unmarshal(b, &raw); err != nil {
+		return err
+	}
+
+	c.UsedPercentage = raw.UsedPercentage
+	c.ContextWindowSize = int64(raw.ContextWindowSize)
+	return nil
+}
+
+type Cost struct {
+	TotalCostUSD      float64 `json:"total_cost_usd"`
+	TotalLinesAdded   int     `json:"total_lines_added"`
+	TotalLinesRemoved int     `json:"total_lines_removed"`
+	TotalDurationMs   int64   `json:"total_duration_ms"`
+}
+
+func (c *Cost) UnmarshalJSON(b []byte) error {
+	if bytes.Equal(bytes.TrimSpace(b), []byte("null")) {
+		*c = Cost{}
+		return nil
+	}
+
+	var raw struct {
+		TotalCostUSD      float64       `json:"total_cost_usd"`
+		TotalLinesAdded   int           `json:"total_lines_added"`
+		TotalLinesRemoved int           `json:"total_lines_removed"`
+		TotalDurationMs   tolerantInt64 `json:"total_duration_ms"`
+	}
+	if err := json.Unmarshal(b, &raw); err != nil {
+		return err
+	}
+
+	c.TotalCostUSD = raw.TotalCostUSD
+	c.TotalLinesAdded = raw.TotalLinesAdded
+	c.TotalLinesRemoved = raw.TotalLinesRemoved
+	c.TotalDurationMs = int64(raw.TotalDurationMs)
+	return nil
+}
 
 // RateLimit represents a single rate limit entry.
 // Present is true only when the JSON field was explicitly included.
@@ -15,20 +93,30 @@ type RateLimit struct {
 	Present        bool `json:"-"`
 }
 
-type rateLimitRaw struct {
-	UsedPercentage float64 `json:"used_percentage"`
-	ResetsAt       int64   `json:"resets_at"`
+func (r *RateLimit) UnmarshalJSON(b []byte) error {
+	if bytes.Equal(bytes.TrimSpace(b), []byte("null")) {
+		*r = RateLimit{}
+		return nil
+	}
+
+	var raw struct {
+		UsedPercentage float64       `json:"used_percentage"`
+		ResetsAt       tolerantInt64 `json:"resets_at"`
+	}
+	if err := json.Unmarshal(b, &raw); err != nil {
+		return err
+	}
+
+	r.UsedPercentage = raw.UsedPercentage
+	r.ResetsAt = int64(raw.ResetsAt)
+	r.Present = true
+	return nil
 }
 
 // RateLimits holds the optional 5-hour and 7-day rate limit values.
 type RateLimits struct {
-	FiveHour RateLimit
-	SevenDay RateLimit
-}
-
-type rateLimitsRaw struct {
-	FiveHour *rateLimitRaw `json:"five_hour"`
-	SevenDay *rateLimitRaw `json:"seven_day"`
+	FiveHour RateLimit `json:"five_hour"`
+	SevenDay RateLimit `json:"seven_day"`
 }
 
 // Payload is the top-level Claude Code statusLine JSON payload.
@@ -37,17 +125,9 @@ type Payload struct {
 		DisplayName string `json:"display_name"`
 	} `json:"model"`
 
-	ContextWindow struct {
-		UsedPercentage    float64 `json:"used_percentage"`
-		ContextWindowSize int64   `json:"context_window_size"`
-	} `json:"context_window"`
+	ContextWindow ContextWindow `json:"context_window"`
 
-	Cost struct {
-		TotalCostUSD      float64 `json:"total_cost_usd"`
-		TotalLinesAdded   int     `json:"total_lines_added"`
-		TotalLinesRemoved int     `json:"total_lines_removed"`
-		TotalDurationMs   int64   `json:"total_duration_ms"`
-	} `json:"cost"`
+	Cost Cost `json:"cost"`
 
 	Workspace struct {
 		CurrentDir string `json:"current_dir"`
@@ -64,45 +144,7 @@ type Payload struct {
 		Name string `json:"name"`
 	} `json:"agent"`
 
-	RateLimits RateLimits
-
-	ExceedsTokens200k bool `json:"exceeds_200k_tokens"`
-}
-
-// payloadJSON mirrors Payload but uses the raw rate-limit type for presence detection.
-type payloadJSON struct {
-	Model struct {
-		DisplayName string `json:"display_name"`
-	} `json:"model"`
-
-	ContextWindow struct {
-		UsedPercentage    float64 `json:"used_percentage"`
-		ContextWindowSize int64   `json:"context_window_size"`
-	} `json:"context_window"`
-
-	Cost struct {
-		TotalCostUSD      float64 `json:"total_cost_usd"`
-		TotalLinesAdded   int     `json:"total_lines_added"`
-		TotalLinesRemoved int     `json:"total_lines_removed"`
-		TotalDurationMs   int64   `json:"total_duration_ms"`
-	} `json:"cost"`
-
-	Workspace struct {
-		CurrentDir string `json:"current_dir"`
-		ProjectDir string `json:"project_dir"`
-	} `json:"workspace"`
-
-	Worktree struct {
-		Branch string `json:"branch"`
-		Name   string `json:"name"`
-		Path   string `json:"path"`
-	} `json:"worktree"`
-
-	Agent struct {
-		Name string `json:"name"`
-	} `json:"agent"`
-
-	RateLimits rateLimitsRaw `json:"rate_limits"`
+	RateLimits RateLimits `json:"rate_limits"`
 
 	ExceedsTokens200k bool `json:"exceeds_200k_tokens"`
 }
@@ -118,35 +160,10 @@ func ParsePayload(r io.Reader) (*Payload, error) {
 		return nil, fmt.Errorf("empty input")
 	}
 
-	var raw payloadJSON
-	if err := json.Unmarshal(data, &raw); err != nil {
+	var p Payload
+	if err := json.Unmarshal(data, &p); err != nil {
 		return nil, fmt.Errorf("parse JSON: %w", err)
 	}
 
-	p := &Payload{
-		Model:             raw.Model,
-		ContextWindow:     raw.ContextWindow,
-		Cost:              raw.Cost,
-		Workspace:         raw.Workspace,
-		Worktree:          raw.Worktree,
-		Agent:             raw.Agent,
-		ExceedsTokens200k: raw.ExceedsTokens200k,
-	}
-
-	if raw.RateLimits.FiveHour != nil {
-		p.RateLimits.FiveHour = RateLimit{
-			UsedPercentage: raw.RateLimits.FiveHour.UsedPercentage,
-			ResetsAt:       raw.RateLimits.FiveHour.ResetsAt,
-			Present:        true,
-		}
-	}
-	if raw.RateLimits.SevenDay != nil {
-		p.RateLimits.SevenDay = RateLimit{
-			UsedPercentage: raw.RateLimits.SevenDay.UsedPercentage,
-			ResetsAt:       raw.RateLimits.SevenDay.ResetsAt,
-			Present:        true,
-		}
-	}
-
-	return p, nil
+	return &p, nil
 }

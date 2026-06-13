@@ -43,8 +43,14 @@ func TestParsePayload_Normal(t *testing.T) {
 	if p.RateLimits.FiveHour.UsedPercentage != 15 {
 		t.Errorf("5h rate: got %v, want 15", p.RateLimits.FiveHour.UsedPercentage)
 	}
+	if !p.RateLimits.FiveHour.Present {
+		t.Error("5h rate should be present")
+	}
 	if p.RateLimits.SevenDay.UsedPercentage != 8 {
 		t.Errorf("7d rate: got %v, want 8", p.RateLimits.SevenDay.UsedPercentage)
+	}
+	if !p.RateLimits.SevenDay.Present {
+		t.Error("7d rate should be present")
 	}
 }
 
@@ -123,6 +129,184 @@ func TestParsePayload_ResetsAtAbsent(t *testing.T) {
 	}
 	if p.RateLimits.SevenDay.ResetsAt != 0 {
 		t.Errorf("seven_day resets_at should be 0 when absent, got %v", p.RateLimits.SevenDay.ResetsAt)
+	}
+}
+
+func TestParsePayload_TolerantIntegerNumbers(t *testing.T) {
+	tests := []struct {
+		name           string
+		json           string
+		wantCtxSize    int64
+		wantDuration   int64
+		wantFiveReset  int64
+		wantSevenReset int64
+	}{
+		{
+			name:           "decimal",
+			json:           `{"model":{"display_name":"Claude Opus 4.6"},"context_window":{"used_percentage":42,"context_window_size":1000000.0},"cost":{"total_cost_usd":0.85,"total_duration_ms":222000.0},"workspace":{"current_dir":"/Users/dev/my-project"},"rate_limits":{"five_hour":{"used_percentage":15,"resets_at":1700000000.0},"seven_day":{"used_percentage":8,"resets_at":1700100000.0}}}`,
+			wantCtxSize:    1000000,
+			wantDuration:   222000,
+			wantFiveReset:  1700000000,
+			wantSevenReset: 1700100000,
+		},
+		{
+			name:           "scientific",
+			json:           `{"model":{"display_name":"Claude Opus 4.6"},"context_window":{"used_percentage":42,"context_window_size":1e6},"cost":{"total_cost_usd":0.85,"total_duration_ms":2.22e5},"workspace":{"current_dir":"/Users/dev/my-project"},"rate_limits":{"five_hour":{"used_percentage":15,"resets_at":1.7e9},"seven_day":{"used_percentage":8,"resets_at":1.7001e9}}}`,
+			wantCtxSize:    1000000,
+			wantDuration:   222000,
+			wantFiveReset:  1700000000,
+			wantSevenReset: 1700100000,
+		},
+		{
+			name:           "fractional truncates",
+			json:           `{"model":{"display_name":"Claude Opus 4.6"},"context_window":{"used_percentage":42,"context_window_size":1000000.9},"cost":{"total_cost_usd":0.85,"total_duration_ms":222000.9},"workspace":{"current_dir":"/Users/dev/my-project"},"rate_limits":{"five_hour":{"used_percentage":15,"resets_at":1700000000.9},"seven_day":{"used_percentage":8,"resets_at":1700100000.9}}}`,
+			wantCtxSize:    1000000,
+			wantDuration:   222000,
+			wantFiveReset:  1700000000,
+			wantSevenReset: 1700100000,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			p, err := ParsePayload(strings.NewReader(tt.json))
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if p.Model.DisplayName != "Claude Opus 4.6" {
+				t.Errorf("model display name: got %q, want %q", p.Model.DisplayName, "Claude Opus 4.6")
+			}
+			if p.Cost.TotalCostUSD != 0.85 {
+				t.Errorf("cost: got %v, want 0.85", p.Cost.TotalCostUSD)
+			}
+			if p.ContextWindow.ContextWindowSize != tt.wantCtxSize {
+				t.Errorf("ctx size: got %v, want %v", p.ContextWindow.ContextWindowSize, tt.wantCtxSize)
+			}
+			if p.Cost.TotalDurationMs != tt.wantDuration {
+				t.Errorf("duration ms: got %v, want %v", p.Cost.TotalDurationMs, tt.wantDuration)
+			}
+			if !p.RateLimits.FiveHour.Present {
+				t.Error("five_hour should be present")
+			}
+			if p.RateLimits.FiveHour.ResetsAt != tt.wantFiveReset {
+				t.Errorf("five_hour resets_at: got %v, want %v", p.RateLimits.FiveHour.ResetsAt, tt.wantFiveReset)
+			}
+			if !p.RateLimits.SevenDay.Present {
+				t.Error("seven_day should be present")
+			}
+			if p.RateLimits.SevenDay.ResetsAt != tt.wantSevenReset {
+				t.Errorf("seven_day resets_at: got %v, want %v", p.RateLimits.SevenDay.ResetsAt, tt.wantSevenReset)
+			}
+		})
+	}
+}
+
+func TestParsePayload_UnconvertibleIntegerFields(t *testing.T) {
+	tests := []struct {
+		name           string
+		json           string
+		wantCtxSize    int64
+		wantDuration   int64
+		wantFiveUsed   float64
+		wantFiveReset  int64
+		wantSevenUsed  float64
+		wantSevenReset int64
+	}{
+		{
+			name:           "context size string",
+			json:           `{"model":{"display_name":"Claude Opus 4.6"},"context_window":{"used_percentage":42,"context_window_size":"wide"},"cost":{"total_cost_usd":0.85,"total_duration_ms":222000},"workspace":{"current_dir":"/Users/dev/my-project"},"rate_limits":{"five_hour":{"used_percentage":15,"resets_at":1700000000}}}`,
+			wantCtxSize:    0,
+			wantDuration:   222000,
+			wantFiveUsed:   15,
+			wantFiveReset:  1700000000,
+			wantSevenUsed:  0,
+			wantSevenReset: 0,
+		},
+		{
+			name:           "context size bool",
+			json:           `{"model":{"display_name":"Claude Opus 4.6"},"context_window":{"used_percentage":42,"context_window_size":true},"cost":{"total_cost_usd":0.85,"total_duration_ms":222000},"workspace":{"current_dir":"/Users/dev/my-project"},"rate_limits":{"five_hour":{"used_percentage":15,"resets_at":1700000000}}}`,
+			wantCtxSize:    0,
+			wantDuration:   222000,
+			wantFiveUsed:   15,
+			wantFiveReset:  1700000000,
+			wantSevenUsed:  0,
+			wantSevenReset: 0,
+		},
+		{
+			name:           "duration string",
+			json:           `{"model":{"display_name":"Claude Opus 4.6"},"context_window":{"used_percentage":42,"context_window_size":1000000},"cost":{"total_cost_usd":0.85,"total_duration_ms":"slow"},"workspace":{"current_dir":"/Users/dev/my-project"},"rate_limits":{"five_hour":{"used_percentage":15,"resets_at":1700000000}}}`,
+			wantCtxSize:    1000000,
+			wantDuration:   0,
+			wantFiveUsed:   15,
+			wantFiveReset:  1700000000,
+			wantSevenUsed:  0,
+			wantSevenReset: 0,
+		},
+		{
+			name:           "duration bool",
+			json:           `{"model":{"display_name":"Claude Opus 4.6"},"context_window":{"used_percentage":42,"context_window_size":1000000},"cost":{"total_cost_usd":0.85,"total_duration_ms":false},"workspace":{"current_dir":"/Users/dev/my-project"},"rate_limits":{"five_hour":{"used_percentage":15,"resets_at":1700000000}}}`,
+			wantCtxSize:    1000000,
+			wantDuration:   0,
+			wantFiveUsed:   15,
+			wantFiveReset:  1700000000,
+			wantSevenUsed:  0,
+			wantSevenReset: 0,
+		},
+		{
+			name:           "resets_at string",
+			json:           `{"model":{"display_name":"Claude Opus 4.6"},"context_window":{"used_percentage":42,"context_window_size":1000000},"cost":{"total_cost_usd":0.85,"total_duration_ms":222000},"workspace":{"current_dir":"/Users/dev/my-project"},"rate_limits":{"five_hour":{"used_percentage":85,"resets_at":"soon"},"seven_day":{"used_percentage":62,"resets_at":"later"}}}`,
+			wantCtxSize:    1000000,
+			wantDuration:   222000,
+			wantFiveUsed:   85,
+			wantFiveReset:  0,
+			wantSevenUsed:  62,
+			wantSevenReset: 0,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			p, err := ParsePayload(strings.NewReader(tt.json))
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if p.Model.DisplayName != "Claude Opus 4.6" {
+				t.Errorf("model display name: got %q, want %q", p.Model.DisplayName, "Claude Opus 4.6")
+			}
+			if p.Cost.TotalCostUSD != 0.85 {
+				t.Errorf("cost: got %v, want 0.85", p.Cost.TotalCostUSD)
+			}
+			if p.ContextWindow.ContextWindowSize != tt.wantCtxSize {
+				t.Errorf("ctx size: got %v, want %v", p.ContextWindow.ContextWindowSize, tt.wantCtxSize)
+			}
+			if p.Cost.TotalDurationMs != tt.wantDuration {
+				t.Errorf("duration ms: got %v, want %v", p.Cost.TotalDurationMs, tt.wantDuration)
+			}
+			if !p.RateLimits.FiveHour.Present {
+				t.Error("five_hour should be present")
+			}
+			if p.RateLimits.FiveHour.UsedPercentage != tt.wantFiveUsed {
+				t.Errorf("five_hour used_percentage: got %v, want %v", p.RateLimits.FiveHour.UsedPercentage, tt.wantFiveUsed)
+			}
+			if p.RateLimits.FiveHour.ResetsAt != tt.wantFiveReset {
+				t.Errorf("five_hour resets_at: got %v, want %v", p.RateLimits.FiveHour.ResetsAt, tt.wantFiveReset)
+			}
+			if tt.wantSevenUsed == 0 && tt.wantSevenReset == 0 {
+				if p.RateLimits.SevenDay.Present {
+					t.Error("seven_day should not be present")
+				}
+				return
+			}
+			if !p.RateLimits.SevenDay.Present {
+				t.Error("seven_day should be present")
+			}
+			if p.RateLimits.SevenDay.UsedPercentage != tt.wantSevenUsed {
+				t.Errorf("seven_day used_percentage: got %v, want %v", p.RateLimits.SevenDay.UsedPercentage, tt.wantSevenUsed)
+			}
+			if p.RateLimits.SevenDay.ResetsAt != tt.wantSevenReset {
+				t.Errorf("seven_day resets_at: got %v, want %v", p.RateLimits.SevenDay.ResetsAt, tt.wantSevenReset)
+			}
+		})
 	}
 }
 
