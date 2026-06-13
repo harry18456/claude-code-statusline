@@ -3,6 +3,8 @@
 package gitcache
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"os"
 	"os/exec"
@@ -11,15 +13,28 @@ import (
 	"time"
 )
 
-// DefaultCacheFile returns the default cache file path using os.TempDir().
-func DefaultCacheFile() string {
-	return filepath.Join(os.TempDir(), "claude-statusline-git-cache")
+const cacheFilePrefix = "claude-statusline-git-cache-"
+
+// DefaultCacheFile returns the default cache file path for dir using os.TempDir().
+func DefaultCacheFile(dir string) string {
+	key := filepath.Clean(dir)
+	if abs, err := filepath.Abs(key); err == nil {
+		key = abs
+	}
+
+	sum := sha256.Sum256([]byte(key))
+	hash := hex.EncodeToString(sum[:16])
+	return filepath.Join(os.TempDir(), cacheFilePrefix+hash)
 }
 
 // Get returns (branch, dirty) for the given directory.
-// It reads from cacheFile if it's fresher than maxAge, otherwise runs git.
+// It reads from the directory-specific cache if it's fresher than maxAge, otherwise runs git.
 // On error or when dir is not a git repo, returns ("", false).
-func Get(dir, cacheFile string, maxAge time.Duration) (branch string, dirty bool) {
+func Get(dir string, maxAge time.Duration) (branch string, dirty bool) {
+	return getCached(dir, DefaultCacheFile(dir), maxAge)
+}
+
+func getCached(dir, cacheFile string, maxAge time.Duration) (branch string, dirty bool) {
 	if !isCacheStale(cacheFile, maxAge) {
 		b, d, err := readCache(cacheFile)
 		if err == nil {
@@ -49,7 +64,31 @@ func writeCache(cacheFile, branch string, dirty bool) error {
 		dirtyStr = "1"
 	}
 	content := fmt.Sprintf("%s|%s", branch, dirtyStr)
-	return os.WriteFile(cacheFile, []byte(content), 0o600)
+
+	tempFile, err := os.CreateTemp(filepath.Dir(cacheFile), filepath.Base(cacheFile)+".tmp-*")
+	if err != nil {
+		return err
+	}
+	tempName := tempFile.Name()
+	removeTemp := true
+	defer func() {
+		if removeTemp {
+			_ = os.Remove(tempName)
+		}
+	}()
+
+	if _, err := tempFile.WriteString(content); err != nil {
+		_ = tempFile.Close()
+		return err
+	}
+	if err := tempFile.Close(); err != nil {
+		return err
+	}
+	if err := os.Rename(tempName, cacheFile); err != nil {
+		return err
+	}
+	removeTemp = false
+	return nil
 }
 
 // readCache reads the cache file and returns (branch, dirty, err).

@@ -1,8 +1,12 @@
 package gitcache
 
 import (
+	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -92,19 +96,146 @@ func TestCacheFreshIsNotStale(t *testing.T) {
 	}
 }
 
+func TestDefaultCacheFileDerivesDirectoryHash(t *testing.T) {
+	tempRoot := setTestTempDir(t)
+	dirA := filepath.Join(t.TempDir(), "repo-a")
+	dirB := filepath.Join(t.TempDir(), "repo-b")
+	if err := os.MkdirAll(dirA, 0o755); err != nil {
+		t.Fatalf("mkdir dirA: %v", err)
+	}
+	if err := os.MkdirAll(dirB, 0o755); err != nil {
+		t.Fatalf("mkdir dirB: %v", err)
+	}
+
+	cacheA := DefaultCacheFile(dirA)
+	cacheAAgain := DefaultCacheFile(filepath.Join(dirA, "."))
+	cacheB := DefaultCacheFile(dirB)
+
+	if cacheA != cacheAAgain {
+		t.Fatalf("same directory should derive same cache path: %q != %q", cacheA, cacheAAgain)
+	}
+	if cacheA == cacheB {
+		t.Fatalf("different directories should derive different cache paths: %q", cacheA)
+	}
+	if filepath.Dir(cacheA) != tempRoot {
+		t.Fatalf("cache path dir: got %q, want %q", filepath.Dir(cacheA), tempRoot)
+	}
+
+	base := filepath.Base(cacheA)
+	const prefix = "claude-statusline-git-cache-"
+	if !strings.HasPrefix(base, prefix) {
+		t.Fatalf("cache filename %q should have prefix %q", base, prefix)
+	}
+	hash := strings.TrimPrefix(base, prefix)
+	if len(hash) != 32 {
+		t.Fatalf("hash length: got %d, want 32", len(hash))
+	}
+	if hash != strings.ToLower(hash) || !isLowerHex(hash) {
+		t.Fatalf("hash should be lowercase hex, got %q", hash)
+	}
+}
+
 // ─── Non-git directory ────────────────────────────────────────────────────────
 
 func TestNonGitDir(t *testing.T) {
 	tmpDir := t.TempDir() // not a git repo
-	cacheFile := filepath.Join(tmpDir, "test-cache")
+	cacheFile := filepath.Join(t.TempDir(), "test-cache")
 
-	branch, dirty := Get(tmpDir, cacheFile, 5*time.Second)
+	branch, dirty := getCached(tmpDir, cacheFile, 5*time.Second)
 	// Non-git dir should return empty branch and not dirty
 	if branch != "" {
 		t.Errorf("non-git dir: expected empty branch, got %q", branch)
 	}
 	if dirty {
 		t.Error("non-git dir: expected dirty=false")
+	}
+}
+
+func TestGetUsesDirectoryIsolatedCache(t *testing.T) {
+	tempRoot := setTestTempDir(t)
+	repoA := initGitRepo(t, "main")
+	repoB := initGitRepo(t, "feature/cache")
+
+	branchA, dirtyA := Get(repoA, 5*time.Second)
+	if branchA != "main" {
+		t.Fatalf("repoA branch: got %q, want %q", branchA, "main")
+	}
+	if dirtyA {
+		t.Fatal("repoA should not be dirty")
+	}
+
+	branchB, dirtyB := Get(repoB, 5*time.Second)
+	if branchB != "feature/cache" {
+		t.Fatalf("repoB branch: got %q, want %q", branchB, "feature/cache")
+	}
+	if dirtyB {
+		t.Fatal("repoB should not be dirty")
+	}
+
+	branchA, dirtyA = Get(repoA, 5*time.Second)
+	if branchA != "main" {
+		t.Fatalf("repoA cached branch: got %q, want %q", branchA, "main")
+	}
+	if dirtyA {
+		t.Fatal("repoA cached result should not be dirty")
+	}
+
+	cacheA := DefaultCacheFile(repoA)
+	cacheB := DefaultCacheFile(repoB)
+	if cacheA == cacheB {
+		t.Fatalf("repos should not share cache path: %q", cacheA)
+	}
+	if filepath.Dir(cacheA) != tempRoot || filepath.Dir(cacheB) != tempRoot {
+		t.Fatalf("cache paths should stay in test temp dir: %q, %q; want dir %q", cacheA, cacheB, tempRoot)
+	}
+}
+
+func TestGetConcurrentRefreshesUseAtomicCache(t *testing.T) {
+	tempRoot := setTestTempDir(t)
+	repo := initGitRepo(t, "main")
+
+	const goroutines = 8
+	const iterations = 5
+	errCh := make(chan error, goroutines*iterations)
+
+	var wg sync.WaitGroup
+	for i := 0; i < goroutines; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for j := 0; j < iterations; j++ {
+				branch, dirty := Get(repo, -time.Second)
+				if branch != "main" {
+					errCh <- fmt.Errorf("branch: got %q, want %q", branch, "main")
+					return
+				}
+				if dirty {
+					errCh <- fmt.Errorf("dirty: got true, want false")
+					return
+				}
+			}
+		}()
+	}
+	wg.Wait()
+	close(errCh)
+
+	for err := range errCh {
+		t.Error(err)
+	}
+
+	cacheFile := DefaultCacheFile(repo)
+	if filepath.Dir(cacheFile) != tempRoot {
+		t.Fatalf("cache path should stay in test temp dir: got %q, want dir %q", cacheFile, tempRoot)
+	}
+	branch, dirty, err := readCache(cacheFile)
+	if err != nil {
+		t.Fatalf("readCache after concurrent refreshes: %v", err)
+	}
+	if branch != "main" {
+		t.Fatalf("cached branch: got %q, want %q", branch, "main")
+	}
+	if dirty {
+		t.Fatal("cached dirty should be false")
 	}
 }
 
@@ -119,7 +250,7 @@ func TestGetFromRealRepo(t *testing.T) {
 	}
 
 	cacheFile := filepath.Join(t.TempDir(), "real-cache")
-	branch, _ := Get(repoDir, cacheFile, 5*time.Second)
+	branch, _ := getCached(repoDir, cacheFile, 5*time.Second)
 	if branch == "" {
 		t.Error("expected non-empty branch from real git repo")
 	}
@@ -143,4 +274,40 @@ func findGitRepo(t *testing.T) string {
 		}
 		dir = parent
 	}
+}
+
+func setTestTempDir(t *testing.T) string {
+	t.Helper()
+	tempRoot := t.TempDir()
+	t.Setenv("TMPDIR", tempRoot)
+	t.Setenv("TMP", tempRoot)
+	t.Setenv("TEMP", tempRoot)
+	return tempRoot
+}
+
+func initGitRepo(t *testing.T, branch string) string {
+	t.Helper()
+	dir := t.TempDir()
+	runGit(t, dir, "init", "-q")
+	runGit(t, dir, "symbolic-ref", "HEAD", "refs/heads/"+branch)
+	return dir
+}
+
+func runGit(t *testing.T, dir string, args ...string) {
+	t.Helper()
+	allArgs := append([]string{"-C", dir}, args...)
+	cmd := exec.Command("git", allArgs...)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("git %v: %v\n%s", args, err, out)
+	}
+}
+
+func isLowerHex(s string) bool {
+	for _, r := range s {
+		if (r < '0' || r > '9') && (r < 'a' || r > 'f') {
+			return false
+		}
+	}
+	return true
 }

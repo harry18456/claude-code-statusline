@@ -40,8 +40,7 @@ func main() {
 	opts.Powerline = opts.NerdFont || os.Getenv("CLAUDE_STATUSLINE_POWERLINE") == "1"
 
 	// Git info via cache
-	cacheFile := gitcache.DefaultCacheFile()
-	branch, dirty := gitcache.Get(p.Workspace.CurrentDir, cacheFile, 5*time.Second)
+	branch, dirty := gitcache.Get(p.Workspace.CurrentDir, 5*time.Second)
 
 	git := renderer.GitInfo{
 		Branch: branch,

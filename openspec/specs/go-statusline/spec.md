@@ -226,6 +226,18 @@ tests:
   - internal/renderer/renderer_test.go
 -->
 
+
+<!-- @trace
+source: isolate-gitcache-atomic-writes
+updated: 2026-06-14
+code:
+  - cmd/statusline/main.go
+  - internal/gitcache/gitcache.go
+  - docs/improvement-plan.md
+tests:
+  - internal/gitcache/gitcache_test.go
+-->
+
 ### Requirement: Context window size label
 
 The program SHALL display a context window size label based solely on `context_window_size`. When `context_window_size >= 1,000,000` and the payload indicates usage has crossed the 200k token pricing threshold, the `1M` label SHALL be colored red to warn of elevated per-token pricing. The model name SHALL NOT affect whether the label is displayed; the program MUST NOT suppress the label based on substrings of the model name.
@@ -699,22 +711,47 @@ The program SHALL support optional Nerd Font icons and Powerline separators.
 ---
 ### Requirement: Git branch with dirty-check caching
 
-The program SHALL display the current git branch with a dirty marker, using a 5-second file-based cache.
+The program SHALL display the current git branch with a dirty marker, using a 5-second file-based cache. The cache file for a working directory SHALL be derived from that working directory, and cache writes SHALL publish complete cache payloads atomically.
 
 #### Scenario: Cache hit
 
-- **WHEN** the cache file exists and is less than 5 seconds old
-- **THEN** the program SHALL read branch and dirty state from cache without running git
+- **WHEN** the cache file derived from the requested working directory exists and is less than 5 seconds old
+- **THEN** the program SHALL read branch and dirty state from that working directory's cache without running git
 
 #### Scenario: Cache miss
 
-- **WHEN** the cache file is absent or older than 5 seconds
-- **THEN** the program SHALL run `git` to determine branch and dirty state, then write the result to cache
+- **WHEN** the cache file derived from the requested working directory is absent or older than 5 seconds
+- **THEN** the program SHALL run `git` in the requested working directory to determine branch and dirty state, then write the result to that working directory's cache
 
 #### Scenario: Cache file location
 
-- **WHEN** writing or reading the cache
-- **THEN** the program SHALL use `os.TempDir()` to determine the temp directory path (cross-platform)
+- **WHEN** deriving the cache file path for a working directory
+- **THEN** the program SHALL use `os.TempDir()` to determine the temp directory path
+- **THEN** the cache filename SHALL contain a deterministic SHA-256 hash prefix derived from a normalized form of the working directory path
+
+#### Scenario: Cache isolation across working directories
+
+- **WHEN** two different working directories have fresh git cache entries with different branch or dirty values
+- **THEN** reading git status for one working directory SHALL NOT return the cached branch or dirty value from the other working directory
+
+##### Example: two repositories within the TTL
+
+- **GIVEN** repository `A` has branch `main` and repository `B` has branch `feature/cache`
+- **WHEN** both repositories refresh their git caches within 5 seconds and repository `A` reads from cache again
+- **THEN** repository `A` returns branch `main`, not `feature/cache`
+
+#### Scenario: Atomic cache write
+
+- **WHEN** writing branch and dirty state to a cache file
+- **THEN** the program MUST write the complete `branch|dirty_flag` payload to a temp file created in the same directory as the final cache file
+- **THEN** the program MUST publish the complete temp file with `os.Rename`
+- **THEN** the program MUST remove the temp file if write, close, or rename fails before a successful rename
+
+#### Scenario: Concurrent cache refresh
+
+- **WHEN** multiple statusline executions refresh the cache for the same working directory concurrently
+- **THEN** every successful cache read SHALL parse a complete `branch|dirty_flag` payload
+- **THEN** the branch returned for the working directory SHALL match the branch detected for that working directory
 
 #### Scenario: Branch name fallback to short SHA
 
