@@ -158,7 +158,7 @@ hit_rate = 分子 / 分母
 
 > 來源：2026-06-14 brainstorming（payload 新欄位 + env var 不方便的反思）。狀態：☐ 待 propose。
 
-### 目標 1 — 顯示執行模式（effort / thinking / fast_mode）
+### 目標 1 — 顯示執行模式（effort / thinking / fast_mode）✅ 已完成（commit `2a44a65`：⚙level + on 後綴 T/F、漸強色 scale、真 binary 驗證）
 
 最新 Claude Code payload（`2.1.177`+）新增欄位（4/23 的 `2.1.114` 還沒有）：
 - `effort.level`（low/medium/high/xhigh/max）：反映 `/effort` 即時設定，直接影響 thinking token 用量 → **成本**。模型不支援 effort 時此欄位 absent。
