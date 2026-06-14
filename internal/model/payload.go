@@ -33,6 +33,37 @@ func (t *tolerantInt64) UnmarshalJSON(b []byte) error {
 type ContextWindow struct {
 	UsedPercentage    float64 `json:"used_percentage"`
 	ContextWindowSize int64   `json:"context_window_size"`
+	CurrentUsage      *CurrentUsage
+}
+
+type CurrentUsage struct {
+	InputTokens              int64
+	OutputTokens             int64
+	CacheCreationInputTokens int64
+	CacheReadInputTokens     int64
+}
+
+func (u *CurrentUsage) UnmarshalJSON(b []byte) error {
+	*u = CurrentUsage{}
+	if bytes.Equal(bytes.TrimSpace(b), []byte("null")) {
+		return nil
+	}
+
+	var raw struct {
+		InputTokens              tolerantInt64 `json:"input_tokens"`
+		OutputTokens             tolerantInt64 `json:"output_tokens"`
+		CacheCreationInputTokens tolerantInt64 `json:"cache_creation_input_tokens"`
+		CacheReadInputTokens     tolerantInt64 `json:"cache_read_input_tokens"`
+	}
+	if err := json.Unmarshal(b, &raw); err != nil {
+		return nil
+	}
+
+	u.InputTokens = int64(raw.InputTokens)
+	u.OutputTokens = int64(raw.OutputTokens)
+	u.CacheCreationInputTokens = int64(raw.CacheCreationInputTokens)
+	u.CacheReadInputTokens = int64(raw.CacheReadInputTokens)
+	return nil
 }
 
 func (c *ContextWindow) UnmarshalJSON(b []byte) error {
@@ -44,6 +75,7 @@ func (c *ContextWindow) UnmarshalJSON(b []byte) error {
 	var raw struct {
 		UsedPercentage    float64       `json:"used_percentage"`
 		ContextWindowSize tolerantInt64 `json:"context_window_size"`
+		CurrentUsage      *CurrentUsage `json:"current_usage"`
 	}
 	if err := json.Unmarshal(b, &raw); err != nil {
 		return err
@@ -51,6 +83,7 @@ func (c *ContextWindow) UnmarshalJSON(b []byte) error {
 
 	c.UsedPercentage = raw.UsedPercentage
 	c.ContextWindowSize = int64(raw.ContextWindowSize)
+	c.CurrentUsage = raw.CurrentUsage
 	return nil
 }
 

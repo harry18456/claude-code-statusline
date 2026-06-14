@@ -102,6 +102,96 @@ func TestParsePayload_MissingFields(t *testing.T) {
 	}
 }
 
+func TestParsePayload_CurrentUsage(t *testing.T) {
+	tests := []struct {
+		name              string
+		json              string
+		wantAvailable     bool
+		wantInput         int64
+		wantOutput        int64
+		wantCacheCreation int64
+		wantCacheRead     int64
+	}{
+		{
+			name:              "object",
+			json:              `{"model":{"display_name":"Claude Opus 4.6"},"context_window":{"used_percentage":73,"context_window_size":200000,"current_usage":{"input_tokens":1,"output_tokens":374,"cache_creation_input_tokens":1302,"cache_read_input_tokens":144198}},"cost":{"total_cost_usd":0.85},"workspace":{"current_dir":"/Users/dev/my-project"}}`,
+			wantAvailable:     true,
+			wantInput:         1,
+			wantOutput:        374,
+			wantCacheCreation: 1302,
+			wantCacheRead:     144198,
+		},
+		{
+			name:          "null",
+			json:          `{"model":{"display_name":"Claude Opus 4.6"},"context_window":{"used_percentage":73,"context_window_size":200000,"current_usage":null},"cost":{"total_cost_usd":0.85},"workspace":{"current_dir":"/Users/dev/my-project"}}`,
+			wantAvailable: false,
+		},
+		{
+			name:          "absent",
+			json:          `{"model":{"display_name":"Claude Opus 4.6"},"context_window":{"used_percentage":73,"context_window_size":200000},"cost":{"total_cost_usd":0.85},"workspace":{"current_dir":"/Users/dev/my-project"}}`,
+			wantAvailable: false,
+		},
+		{
+			name:              "decimal",
+			json:              `{"model":{"display_name":"Claude Opus 4.6"},"context_window":{"used_percentage":73,"context_window_size":200000,"current_usage":{"input_tokens":1.0,"output_tokens":374.0,"cache_creation_input_tokens":1302.0,"cache_read_input_tokens":144198.0}},"cost":{"total_cost_usd":0.85},"workspace":{"current_dir":"/Users/dev/my-project"}}`,
+			wantAvailable:     true,
+			wantInput:         1,
+			wantOutput:        374,
+			wantCacheCreation: 1302,
+			wantCacheRead:     144198,
+		},
+		{
+			name:              "scientific",
+			json:              `{"model":{"display_name":"Claude Opus 4.6"},"context_window":{"used_percentage":73,"context_window_size":200000,"current_usage":{"input_tokens":1e0,"output_tokens":3.74e2,"cache_creation_input_tokens":1.302e3,"cache_read_input_tokens":1.44198e5}},"cost":{"total_cost_usd":0.85},"workspace":{"current_dir":"/Users/dev/my-project"}}`,
+			wantAvailable:     true,
+			wantInput:         1,
+			wantOutput:        374,
+			wantCacheCreation: 1302,
+			wantCacheRead:     144198,
+		},
+		{
+			name:              "wrong scalar token fields",
+			json:              `{"model":{"display_name":"Claude Opus 4.6"},"context_window":{"used_percentage":73,"context_window_size":200000,"current_usage":{"input_tokens":"wide","output_tokens":true,"cache_creation_input_tokens":1302,"cache_read_input_tokens":144198}},"cost":{"total_cost_usd":0.85},"workspace":{"current_dir":"/Users/dev/my-project"}}`,
+			wantAvailable:     true,
+			wantInput:         0,
+			wantOutput:        0,
+			wantCacheCreation: 1302,
+			wantCacheRead:     144198,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			p, err := ParsePayload(strings.NewReader(tt.json))
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			got := p.ContextWindow.CurrentUsage
+			if !tt.wantAvailable {
+				if got != nil {
+					t.Fatalf("CurrentUsage should be nil, got %#v", got)
+				}
+				return
+			}
+			if got == nil {
+				t.Fatal("CurrentUsage should be available")
+			}
+			if got.InputTokens != tt.wantInput {
+				t.Errorf("InputTokens: got %v, want %v", got.InputTokens, tt.wantInput)
+			}
+			if got.OutputTokens != tt.wantOutput {
+				t.Errorf("OutputTokens: got %v, want %v", got.OutputTokens, tt.wantOutput)
+			}
+			if got.CacheCreationInputTokens != tt.wantCacheCreation {
+				t.Errorf("CacheCreationInputTokens: got %v, want %v", got.CacheCreationInputTokens, tt.wantCacheCreation)
+			}
+			if got.CacheReadInputTokens != tt.wantCacheRead {
+				t.Errorf("CacheReadInputTokens: got %v, want %v", got.CacheReadInputTokens, tt.wantCacheRead)
+			}
+		})
+	}
+}
+
 func TestParsePayload_ResetsAtPresent(t *testing.T) {
 	json := `{"model":{"display_name":"Claude Opus 4.6"},"context_window":{"used_percentage":85,"context_window_size":200000},"cost":{"total_cost_usd":2.50,"total_duration_ms":300000},"workspace":{"current_dir":"/Users/dev/my-project"},"rate_limits":{"five_hour":{"used_percentage":85,"resets_at":1700000000},"seven_day":{"used_percentage":62,"resets_at":1700100000}}}`
 

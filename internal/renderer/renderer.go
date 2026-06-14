@@ -199,6 +199,32 @@ func costColor(usd float64) string {
 
 // ─── Duration ─────────────────────────────────────────────────────────────────
 
+func cacheHitColor(pct int) string {
+	switch {
+	case pct >= 80:
+		return ansiGray
+	case pct >= 50:
+		return ansiYellow
+	default:
+		return ansiRed
+	}
+}
+
+func formatCacheHit(usage *model.CurrentUsage, opts Options) string {
+	if usage == nil {
+		return ""
+	}
+	denominator := usage.InputTokens + usage.CacheCreationInputTokens + usage.CacheReadInputTokens
+	if denominator == 0 {
+		return ""
+	}
+	pct := int(math.Round(float64(usage.CacheReadInputTokens) / float64(denominator) * 100))
+	if opts.ASCIIMode {
+		return fmt.Sprintf("cache:%d%%", pct)
+	}
+	return fmt.Sprintf("%s⚡%d%%%s", cacheHitColor(pct), pct, ansiReset)
+}
+
 func formatDuration(ms int64) string {
 	if ms <= 0 {
 		return ""
@@ -410,6 +436,7 @@ func Render(p *model.Payload, git GitInfo, opts Options) (line1, line2 string) {
 	// ── Cost ──────────────────────────────────────────────────────────────────
 	costFmt := fmt.Sprintf("%.2f", p.Cost.TotalCostUSD)
 	cColor := costColor(p.Cost.TotalCostUSD)
+	cacheHit := formatCacheHit(p.ContextWindow.CurrentUsage, opts)
 
 	// ── Duration ──────────────────────────────────────────────────────────────
 	durStr := formatDuration(p.Cost.TotalDurationMs)
@@ -437,7 +464,11 @@ func Render(p *model.Payload, git GitInfo, opts Options) (line1, line2 string) {
 	l1.WriteString(sym.sep + bar + " " + pctColor(pct) + fmt.Sprintf("%d%%", pct) + ansiReset)
 	l1.WriteString(warnStr)
 	l1.WriteString(label)
-	l1.WriteString(sym.sep + cColor + sym.cost + "$" + costFmt + ansiReset)
+	costSegment := cColor + sym.cost + "$" + costFmt + ansiReset
+	if cacheHit != "" {
+		costSegment += " " + cacheHit
+	}
+	l1.WriteString(sym.sep + costSegment)
 	if durStr != "" {
 		l1.WriteString(sym.sep + ansiGray + sym.time + durStr + ansiReset)
 	}

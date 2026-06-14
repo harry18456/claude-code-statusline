@@ -332,6 +332,143 @@ func TestFormatRateClampsPathologicalUsedPercentages(t *testing.T) {
 
 // ─── Cost color thresholds ────────────────────────────────────────────────────
 
+func TestFormatCacheHitCalculatesRoundedRate(t *testing.T) {
+	usage := &model.CurrentUsage{
+		InputTokens:              1,
+		OutputTokens:             374,
+		CacheCreationInputTokens: 1302,
+		CacheReadInputTokens:     144198,
+	}
+	got := formatCacheHit(usage, DefaultOptions())
+	if stripANSI(got) != "⚡99%" {
+		t.Fatalf("formatCacheHit() = %q, want ⚡99%% after ANSI stripping", got)
+	}
+	if !strings.Contains(got, ansiGray) {
+		t.Fatalf("99%% cache hit should be gray, got %q", got)
+	}
+}
+
+func TestFormatCacheHitIgnoresOutputTokens(t *testing.T) {
+	usage := &model.CurrentUsage{
+		InputTokens:              10,
+		OutputTokens:             900,
+		CacheCreationInputTokens: 10,
+		CacheReadInputTokens:     80,
+	}
+	got := stripANSI(formatCacheHit(usage, DefaultOptions()))
+	if got != "⚡80%" {
+		t.Fatalf("formatCacheHit() = %q, want ⚡80%%", got)
+	}
+}
+
+func TestFormatCacheHitUnavailable(t *testing.T) {
+	if got := formatCacheHit(nil, DefaultOptions()); got != "" {
+		t.Fatalf("nil current usage should suppress cache hit, got %q", got)
+	}
+}
+
+func TestFormatCacheHitZeroDenominator(t *testing.T) {
+	usage := &model.CurrentUsage{}
+	if got := formatCacheHit(usage, DefaultOptions()); got != "" {
+		t.Fatalf("zero denominator should suppress cache hit, got %q", got)
+	}
+}
+
+func TestFormatCacheHitASCII(t *testing.T) {
+	opts := DefaultOptions()
+	opts.ASCIIMode = true
+	usage := &model.CurrentUsage{
+		InputTokens:              1,
+		OutputTokens:             374,
+		CacheCreationInputTokens: 1302,
+		CacheReadInputTokens:     144198,
+	}
+	got := formatCacheHit(usage, opts)
+	if got != "cache:99%" {
+		t.Fatalf("ASCII cache hit = %q, want cache:99%%", got)
+	}
+	if strings.Contains(got, "\033[") {
+		t.Fatalf("ASCII cache hit should contain no ANSI escape, got %q", got)
+	}
+	if strings.Contains(got, "⚡") {
+		t.Fatalf("ASCII cache hit should contain no Unicode glyph, got %q", got)
+	}
+}
+
+func TestFormatCacheHitNerdFontUsesLightning(t *testing.T) {
+	opts := DefaultOptions()
+	opts.NerdFont = true
+	usage := &model.CurrentUsage{
+		InputTokens:              1,
+		CacheCreationInputTokens: 1302,
+		CacheReadInputTokens:     144198,
+	}
+	got := stripANSI(formatCacheHit(usage, opts))
+	if got != "⚡99%" {
+		t.Fatalf("NerdFont cache hit = %q, want ⚡99%%", got)
+	}
+}
+
+func TestFormatCacheHitColorThresholds(t *testing.T) {
+	tests := []struct {
+		name string
+		read int64
+		want string
+	}{
+		{name: "high is gray", read: 80, want: ansiGray},
+		{name: "medium is yellow", read: 50, want: ansiYellow},
+		{name: "low is red", read: 49, want: ansiRed},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			usage := &model.CurrentUsage{
+				InputTokens:          100 - tt.read,
+				CacheReadInputTokens: tt.read,
+			}
+			got := formatCacheHit(usage, DefaultOptions())
+			if !strings.Contains(got, tt.want) {
+				t.Fatalf("formatCacheHit() color mismatch: got %q, want color %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestRenderCacheHitCostSameSegment(t *testing.T) {
+	jsonWithCache := `{"model":{"display_name":"Claude Opus 4.6"},"context_window":{"used_percentage":73,"context_window_size":200000,"current_usage":{"input_tokens":1,"output_tokens":374,"cache_creation_input_tokens":1302,"cache_read_input_tokens":144198}},"cost":{"total_cost_usd":0.85,"total_duration_ms":222000},"workspace":{"current_dir":"/tmp/x"},"rate_limits":{"five_hour":{"used_percentage":15},"seven_day":{"used_percentage":8}}}`
+	p := mustParse(t, jsonWithCache)
+	line1, _ := renderWith(p, GitInfo{}, DefaultOptions())
+	plain := stripANSI(line1)
+	if !strings.Contains(plain, "$0.85 ⚡99%") {
+		t.Fatalf("cache hit should sit in the same cost segment with one space, got %q", plain)
+	}
+}
+
+func TestRenderCacheHitUnavailableLeavesCostSegmentClean(t *testing.T) {
+	jsonWithoutCache := `{"model":{"display_name":"Claude Opus 4.6"},"context_window":{"used_percentage":73,"context_window_size":200000,"current_usage":null},"cost":{"total_cost_usd":0.85,"total_duration_ms":0},"workspace":{"current_dir":"/tmp/x"}}`
+	p := mustParse(t, jsonWithoutCache)
+	line1, _ := renderWith(p, GitInfo{}, DefaultOptions())
+	plain := stripANSI(line1)
+	if !strings.HasSuffix(plain, "$0.85") {
+		t.Fatalf("unavailable cache should leave cost segment without trailing cache space, got %q", plain)
+	}
+}
+
+func TestRenderCacheHitASCIIInCostSegment(t *testing.T) {
+	jsonWithCache := `{"model":{"display_name":"Claude Opus 4.6"},"context_window":{"used_percentage":73,"context_window_size":200000,"current_usage":{"input_tokens":1,"output_tokens":374,"cache_creation_input_tokens":1302,"cache_read_input_tokens":144198}},"cost":{"total_cost_usd":0.85,"total_duration_ms":222000},"workspace":{"current_dir":"/tmp/x"}}`
+	p := mustParse(t, jsonWithCache)
+	opts := DefaultOptions()
+	opts.ASCIIMode = true
+	line1, _ := renderWith(p, GitInfo{}, opts)
+	plain := stripANSI(line1)
+	if !strings.Contains(plain, "$0.85 cache:99%") {
+		t.Fatalf("ASCII cache hit should sit in cost segment, got %q", plain)
+	}
+	if strings.Contains(plain, "⚡") {
+		t.Fatalf("ASCII rendered line should not use cache glyph, got %q", plain)
+	}
+}
+
 func TestRenderCostZeroIsGray(t *testing.T) {
 	p := mustParse(t, jsonStartup)
 	line1, _ := renderWith(p, GitInfo{}, DefaultOptions())
