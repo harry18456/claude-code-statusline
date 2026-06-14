@@ -301,6 +301,35 @@ func TestRenderRateLimitAbove80IsRed(t *testing.T) {
 	}
 }
 
+func TestFormatRateClampsPathologicalUsedPercentages(t *testing.T) {
+	now := time.Unix(1_000_000_000, 0)
+	opts := DefaultOptions()
+	opts.ASCIIMode = true
+
+	tests := []struct {
+		name string
+		used float64
+		want string
+	}{
+		{name: "negative", used: -25, want: "5h:0%"},
+		{name: "above one hundred", used: 150, want: "5h:100%"},
+		{name: "huge", used: 1e308, want: "5h:100%"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			rl := model.RateLimit{UsedPercentage: tt.used, Present: true}
+			got := stripANSI(formatRate("5h", rl, now, opts))
+			if got != tt.want {
+				t.Fatalf("formatRate() = %q, want %q", got, tt.want)
+			}
+			if strings.Contains(got, "-") {
+				t.Fatalf("formatRate() should not render a negative percentage: %q", got)
+			}
+		})
+	}
+}
+
 // ─── Cost color thresholds ────────────────────────────────────────────────────
 
 func TestRenderCostZeroIsGray(t *testing.T) {
@@ -825,6 +854,51 @@ func TestComputePaceArrow_MagnitudeFloorAtOne(t *testing.T) {
 	}
 	if strings.Contains(got, "▲0%") || strings.Contains(got, "▼0%") {
 		t.Errorf("magnitude must never render as 0%%, got: %q", got)
+	}
+}
+
+func TestComputePaceArrowClampsPathologicalMagnitude(t *testing.T) {
+	now := time.Unix(1_000_000_000, 0)
+	opts := DefaultOptions()
+	opts.ASCIIMode = true
+
+	tests := []struct {
+		name     string
+		used     float64
+		resetsAt int64
+		want     string
+	}{
+		{
+			name:     "negative",
+			used:     -25,
+			resetsAt: now.Unix() + 1,
+			want:     "v100%",
+		},
+		{
+			name:     "above one hundred",
+			used:     150,
+			resetsAt: now.Unix() + sevenDayWindowSeconds,
+			want:     "^100%",
+		},
+		{
+			name:     "huge",
+			used:     1e308,
+			resetsAt: now.Unix() + sevenDayWindowSeconds,
+			want:     "^100%",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			rl := model.RateLimit{UsedPercentage: tt.used, ResetsAt: tt.resetsAt, Present: true}
+			got := computePaceArrow(rl, now, opts)
+			if got != tt.want {
+				t.Fatalf("computePaceArrow() = %q, want %q", got, tt.want)
+			}
+			if strings.Contains(got, "-") {
+				t.Fatalf("computePaceArrow() should not render a negative magnitude: %q", got)
+			}
+		})
 	}
 }
 

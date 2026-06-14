@@ -339,7 +339,7 @@ func computePaceArrow(rl model.RateLimit, now time.Time, opts Options) string {
 	elapsedDays := min(int64(math.Ceil(float64(elapsed)/float64(dayLengthSeconds))), int64(7))
 	expectedPct := float64(elapsedDays) * (100.0 / 7.0)
 	deviation := rl.UsedPercentage - expectedPct
-	magnitude := int(math.Round(math.Abs(deviation)))
+	magnitude := clamp(int(math.Round(min(math.Abs(deviation), 100))), 0, 100)
 	if magnitude == 0 && deviation != 0 {
 		magnitude = 1
 	}
@@ -365,7 +365,7 @@ func formatRate(label string, rl model.RateLimit, now time.Time, opts Options) s
 	if !rl.Present {
 		return ""
 	}
-	pct := int(math.Round(rl.UsedPercentage))
+	pct := clamp(int(math.Round(min(max(rl.UsedPercentage, 0), 100))), 0, 100)
 	color := ansiGray
 	if pct >= 80 {
 		color = ansiRed
