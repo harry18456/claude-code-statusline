@@ -192,6 +192,132 @@ func TestParsePayload_CurrentUsage(t *testing.T) {
 	}
 }
 
+func TestParsePayload_ExecutionMode(t *testing.T) {
+	tests := []struct {
+		name                string
+		json                string
+		wantEffortAvailable bool
+		wantEffort          string
+		wantThinking        bool
+		wantThinkingPresent bool
+		wantFast            bool
+		wantFastPresent     bool
+	}{
+		{
+			name:                "all present with fast false",
+			json:                `{"model":{"display_name":"Claude Opus 4.6"},"effort":{"level":"max"},"thinking":{"enabled":true},"fast_mode":false,"context_window":{"used_percentage":73,"context_window_size":200000},"cost":{"total_cost_usd":0.85},"workspace":{"current_dir":"/Users/dev/my-project"}}`,
+			wantEffortAvailable: true,
+			wantEffort:          "max",
+			wantThinking:        true,
+			wantThinkingPresent: true,
+			wantFast:            false,
+			wantFastPresent:     true,
+		},
+		{
+			name:                "all off still preserves explicit false",
+			json:                `{"model":{"display_name":"Claude Opus 4.6"},"effort":{"level":"low"},"thinking":{"enabled":false},"fast_mode":false,"context_window":{"used_percentage":73,"context_window_size":200000},"cost":{"total_cost_usd":0.85},"workspace":{"current_dir":"/Users/dev/my-project"}}`,
+			wantEffortAvailable: true,
+			wantEffort:          "low",
+			wantThinking:        false,
+			wantThinkingPresent: true,
+			wantFast:            false,
+			wantFastPresent:     true,
+		},
+		{
+			name:                "fast true",
+			json:                `{"model":{"display_name":"Claude Opus 4.6"},"effort":{"level":"high"},"thinking":{"enabled":false},"fast_mode":true,"context_window":{"used_percentage":73,"context_window_size":200000},"cost":{"total_cost_usd":0.85},"workspace":{"current_dir":"/Users/dev/my-project"}}`,
+			wantEffortAvailable: true,
+			wantEffort:          "high",
+			wantThinking:        false,
+			wantThinkingPresent: true,
+			wantFast:            true,
+			wantFastPresent:     true,
+		},
+		{
+			name: "absent",
+			json: `{"model":{"display_name":"Claude Opus 4.6"},"context_window":{"used_percentage":73,"context_window_size":200000},"cost":{"total_cost_usd":0.85},"workspace":{"current_dir":"/Users/dev/my-project"}}`,
+		},
+		{
+			name: "null",
+			json: `{"model":{"display_name":"Claude Opus 4.6"},"effort":null,"thinking":null,"fast_mode":null,"context_window":{"used_percentage":73,"context_window_size":200000},"cost":{"total_cost_usd":0.85},"workspace":{"current_dir":"/Users/dev/my-project"}}`,
+		},
+		{
+			name:                "malformed values preserve other fields",
+			json:                `{"model":{"display_name":"Claude Opus 4.6"},"effort":{"level":42},"thinking":{"enabled":"yes"},"fast_mode":"turbo","context_window":{"used_percentage":73,"context_window_size":200000},"cost":{"total_cost_usd":0.85},"workspace":{"current_dir":"/Users/dev/my-project"}}`,
+			wantEffortAvailable: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			p, err := ParsePayload(strings.NewReader(tt.json))
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if p.Model.DisplayName != "Claude Opus 4.6" {
+				t.Fatalf("model display name: got %q", p.Model.DisplayName)
+			}
+			if p.Cost.TotalCostUSD != 0.85 {
+				t.Fatalf("cost should survive execution-mode parse failures, got %v", p.Cost.TotalCostUSD)
+			}
+
+			if !tt.wantEffortAvailable {
+				if p.Effort != nil {
+					t.Fatalf("Effort should be nil, got %#v", p.Effort)
+				}
+			} else {
+				if p.Effort == nil {
+					t.Fatal("Effort should be available")
+				}
+				if p.Effort.Level != tt.wantEffort {
+					t.Fatalf("Effort.Level: got %q, want %q", p.Effort.Level, tt.wantEffort)
+				}
+			}
+
+			if !tt.wantThinkingPresent {
+				if p.Thinking != nil && p.Thinking.Enabled.Present {
+					t.Fatalf("Thinking.Enabled should be unavailable, got %#v", p.Thinking.Enabled)
+				}
+			} else {
+				if p.Thinking == nil {
+					t.Fatal("Thinking should be available")
+				}
+				if !p.Thinking.Enabled.Present {
+					t.Fatal("Thinking.Enabled should be present")
+				}
+				if p.Thinking.Enabled.Value != tt.wantThinking {
+					t.Fatalf("Thinking.Enabled.Value: got %v, want %v", p.Thinking.Enabled.Value, tt.wantThinking)
+				}
+			}
+
+			if p.FastMode.Present != tt.wantFastPresent {
+				t.Fatalf("FastMode.Present: got %v, want %v", p.FastMode.Present, tt.wantFastPresent)
+			}
+			if p.FastMode.Value != tt.wantFast {
+				t.Fatalf("FastMode.Value: got %v, want %v", p.FastMode.Value, tt.wantFast)
+			}
+		})
+	}
+}
+
+func TestParsePayload_ExecutionModeKnownEffortLevels(t *testing.T) {
+	for _, level := range []string{"low", "medium", "high", "xhigh", "max"} {
+		t.Run(level, func(t *testing.T) {
+			json := `{"model":{"display_name":"Claude Opus 4.6"},"effort":{"level":"` + level + `"},"context_window":{"used_percentage":73,"context_window_size":200000},"cost":{"total_cost_usd":0.85},"workspace":{"current_dir":"/Users/dev/my-project"}}`
+			p, err := ParsePayload(strings.NewReader(json))
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if p.Effort == nil {
+				t.Fatal("Effort should be available")
+			}
+			if p.Effort.Level != level {
+				t.Fatalf("Effort.Level: got %q, want %q", p.Effort.Level, level)
+			}
+		})
+	}
+}
+
 func TestParsePayload_ResetsAtPresent(t *testing.T) {
 	json := `{"model":{"display_name":"Claude Opus 4.6"},"context_window":{"used_percentage":85,"context_window_size":200000},"cost":{"total_cost_usd":2.50,"total_duration_ms":300000},"workspace":{"current_dir":"/Users/dev/my-project"},"rate_limits":{"five_hour":{"used_percentage":85,"resets_at":1700000000},"seven_day":{"used_percentage":62,"resets_at":1700100000}}}`
 

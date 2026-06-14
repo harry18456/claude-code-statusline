@@ -332,6 +332,149 @@ func TestFormatRateClampsPathologicalUsedPercentages(t *testing.T) {
 
 // ─── Cost color thresholds ────────────────────────────────────────────────────
 
+func TestFormatExecutionModeEffortLevels(t *testing.T) {
+	tests := []struct {
+		level string
+		color string
+	}{
+		{level: "low", color: ansiGray},
+		{level: "medium", color: ansiCyan},
+		{level: "high", color: ansiYellow},
+		{level: "xhigh", color: ansiRed},
+		{level: "max", color: ansiBoldRed},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.level, func(t *testing.T) {
+			p := executionModePayload(tt.level, false, false)
+			got := formatExecutionMode(p, DefaultOptions())
+			if stripANSI(got) != "⚙"+tt.level {
+				t.Fatalf("formatExecutionMode() = %q, want ⚙%s", stripANSI(got), tt.level)
+			}
+			if !strings.Contains(got, tt.color) {
+				t.Fatalf("formatExecutionMode() color mismatch: got %q, want color %q", got, tt.color)
+			}
+		})
+	}
+}
+
+func TestFormatExecutionModeOnSuffixes(t *testing.T) {
+	tests := []struct {
+		name     string
+		thinking bool
+		fast     bool
+		want     string
+	}{
+		{name: "thinking only", thinking: true, fast: false, want: "⚙max T"},
+		{name: "fast only", thinking: false, fast: true, want: "⚙max F"},
+		{name: "thinking and fast", thinking: true, fast: true, want: "⚙max TF"},
+		{name: "all off", thinking: false, fast: false, want: "⚙max"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			p := executionModePayload("max", tt.thinking, tt.fast)
+			got := formatExecutionMode(p, DefaultOptions())
+			if stripANSI(got) != tt.want {
+				t.Fatalf("formatExecutionMode() = %q, want %q", stripANSI(got), tt.want)
+			}
+			if tt.thinking || tt.fast {
+				suffix := strings.TrimPrefix(tt.want, "⚙max ")
+				if !strings.Contains(got, ansiGray+suffix) {
+					t.Fatalf("on suffix should be gray: got %q, want suffix %q in gray", got, suffix)
+				}
+			}
+		})
+	}
+}
+
+func TestFormatExecutionModeUnavailable(t *testing.T) {
+	tests := []struct {
+		name string
+		p    *model.Payload
+	}{
+		{name: "nil payload", p: nil},
+		{name: "absent effort", p: &model.Payload{}},
+		{name: "empty effort", p: &model.Payload{Effort: &model.Effort{}}},
+		{name: "unknown effort", p: &model.Payload{Effort: &model.Effort{Level: "ultra"}}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := formatExecutionMode(tt.p, DefaultOptions()); got != "" {
+				t.Fatalf("formatExecutionMode() should suppress unavailable effort, got %q", got)
+			}
+		})
+	}
+}
+
+func TestFormatExecutionModeASCII(t *testing.T) {
+	opts := DefaultOptions()
+	opts.ASCIIMode = true
+	p := executionModePayload("max", true, true)
+	got := formatExecutionMode(p, opts)
+	if got != "effort:max think fast" {
+		t.Fatalf("ASCII execution mode = %q, want effort:max think fast", got)
+	}
+	if strings.Contains(got, "\033[") {
+		t.Fatalf("ASCII execution mode should contain no ANSI escape, got %q", got)
+	}
+	if containsNonASCII(got) {
+		t.Fatalf("ASCII execution mode should contain no Unicode glyph, got %q", got)
+	}
+}
+
+func TestFormatExecutionModeNerdFont(t *testing.T) {
+	opts := DefaultOptions()
+	opts.NerdFont = true
+	p := executionModePayload("high", true, true)
+	got := formatExecutionMode(p, opts)
+	if stripANSI(got) != "⚙high TF" {
+		t.Fatalf("NerdFont execution mode = %q, want ⚙high TF", stripANSI(got))
+	}
+	if !strings.Contains(got, ansiYellow) {
+		t.Fatalf("high effort should be yellow, got %q", got)
+	}
+}
+
+func TestRenderExecutionModeModelAdjacent(t *testing.T) {
+	jsonWithMode := `{"model":{"display_name":"Claude Opus 4.6"},"effort":{"level":"max"},"thinking":{"enabled":true},"fast_mode":false,"context_window":{"used_percentage":73,"context_window_size":200000,"current_usage":{"input_tokens":1,"output_tokens":374,"cache_creation_input_tokens":1302,"cache_read_input_tokens":144198}},"cost":{"total_cost_usd":0.85,"total_duration_ms":222000},"workspace":{"current_dir":"/tmp/x"},"rate_limits":{"five_hour":{"used_percentage":15},"seven_day":{"used_percentage":8}}}`
+	p := mustParse(t, jsonWithMode)
+	line1, _ := renderWith(p, GitInfo{}, DefaultOptions())
+	plain := stripANSI(line1)
+	if !strings.Contains(plain, "Claude Opus 4.6 ⚙max T") {
+		t.Fatalf("execution mode should sit directly after model, got %q", plain)
+	}
+	if !strings.Contains(plain, "⚙max T") || !strings.Contains(plain, "$0.85") || !strings.Contains(plain, "5h:15%") {
+		t.Fatalf("execution mode should preserve existing line 1 segments, got %q", plain)
+	}
+}
+
+func TestRenderExecutionModeASCIIModelAdjacent(t *testing.T) {
+	jsonWithMode := `{"model":{"display_name":"Claude Opus 4.6"},"effort":{"level":"high"},"thinking":{"enabled":true},"fast_mode":true,"context_window":{"used_percentage":73,"context_window_size":200000},"cost":{"total_cost_usd":0.85,"total_duration_ms":222000},"workspace":{"current_dir":"/tmp/x"}}`
+	p := mustParse(t, jsonWithMode)
+	opts := DefaultOptions()
+	opts.ASCIIMode = true
+	line1, _ := renderWith(p, GitInfo{}, opts)
+	plain := stripANSI(line1)
+	if !strings.Contains(plain, "Claude Opus 4.6 effort:high think fast |") {
+		t.Fatalf("ASCII execution mode should sit directly after model, got %q", plain)
+	}
+	if containsNonASCII(plain) {
+		t.Fatalf("ASCII line should contain no execution-mode Unicode glyph, got %q", plain)
+	}
+}
+
+func TestRenderExecutionModeUnavailable(t *testing.T) {
+	jsonWithoutMode := `{"model":{"display_name":"Claude Opus 4.6"},"context_window":{"used_percentage":73,"context_window_size":200000},"cost":{"total_cost_usd":0.85,"total_duration_ms":0},"workspace":{"current_dir":"/tmp/x"}}`
+	p := mustParse(t, jsonWithoutMode)
+	line1, _ := renderWith(p, GitInfo{}, DefaultOptions())
+	plain := stripANSI(line1)
+	if strings.Contains(plain, "⚙") || strings.Contains(plain, "effort:") {
+		t.Fatalf("unavailable execution mode should be omitted, got %q", plain)
+	}
+}
+
 func TestFormatCacheHitCalculatesRoundedRate(t *testing.T) {
 	usage := &model.CurrentUsage{
 		InputTokens:              1,
@@ -1282,6 +1425,29 @@ func itoa(n int64) string {
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
+
+func executionModePayload(level string, thinking, fast bool) *model.Payload {
+	return &model.Payload{
+		Effort: &model.Effort{Level: level},
+		Thinking: &model.Thinking{Enabled: model.OptionalBool{
+			Value:   thinking,
+			Present: true,
+		}},
+		FastMode: model.OptionalBool{
+			Value:   fast,
+			Present: true,
+		},
+	}
+}
+
+func containsNonASCII(s string) bool {
+	for _, r := range s {
+		if r > 127 {
+			return true
+		}
+	}
+	return false
+}
 
 // stripANSI removes ANSI escape sequences for plain-text comparison.
 func stripANSI(s string) string {

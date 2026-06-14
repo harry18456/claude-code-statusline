@@ -30,6 +30,69 @@ func (t *tolerantInt64) UnmarshalJSON(b []byte) error {
 	return nil
 }
 
+type OptionalBool struct {
+	Value   bool
+	Present bool
+}
+
+func (o *OptionalBool) UnmarshalJSON(b []byte) error {
+	*o = OptionalBool{}
+	if bytes.Equal(bytes.TrimSpace(b), []byte("null")) {
+		return nil
+	}
+
+	var v bool
+	if err := json.Unmarshal(b, &v); err != nil {
+		return nil
+	}
+
+	o.Value = v
+	o.Present = true
+	return nil
+}
+
+type Effort struct {
+	Level string
+}
+
+func (e *Effort) UnmarshalJSON(b []byte) error {
+	*e = Effort{}
+	if bytes.Equal(bytes.TrimSpace(b), []byte("null")) {
+		return nil
+	}
+
+	var raw struct {
+		Level string `json:"level"`
+	}
+	if err := json.Unmarshal(b, &raw); err != nil {
+		return nil
+	}
+
+	e.Level = raw.Level
+	return nil
+}
+
+type Thinking struct {
+	Enabled OptionalBool
+}
+
+func (t *Thinking) UnmarshalJSON(b []byte) error {
+	*t = Thinking{}
+	if bytes.Equal(bytes.TrimSpace(b), []byte("null")) {
+		return nil
+	}
+
+	var raw struct {
+		Enabled OptionalBool `json:"enabled"`
+	}
+	if err := json.Unmarshal(b, &raw); err != nil {
+		return nil
+	}
+
+	t.Enabled = raw.Enabled
+	return nil
+}
+
 type ContextWindow struct {
 	UsedPercentage    float64 `json:"used_percentage"`
 	ContextWindowSize int64   `json:"context_window_size"`
@@ -157,6 +220,10 @@ type Payload struct {
 	Model struct {
 		DisplayName string `json:"display_name"`
 	} `json:"model"`
+
+	Effort   *Effort      `json:"effort"`
+	Thinking *Thinking    `json:"thinking"`
+	FastMode OptionalBool `json:"fast_mode"`
 
 	ContextWindow ContextWindow `json:"context_window"`
 

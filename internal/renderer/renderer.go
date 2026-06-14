@@ -41,6 +41,7 @@ const (
 	ansiYellow  = "\033[33m"
 	ansiGreen   = "\033[32m"
 	ansiRed     = "\033[31m"
+	ansiBoldRed = "\033[1;31m"
 	ansiMagenta = "\033[35m"
 )
 
@@ -223,6 +224,62 @@ func formatCacheHit(usage *model.CurrentUsage, opts Options) string {
 		return fmt.Sprintf("cache:%d%%", pct)
 	}
 	return fmt.Sprintf("%s⚡%d%%%s", cacheHitColor(pct), pct, ansiReset)
+}
+
+func effortColor(level string) string {
+	switch level {
+	case "low":
+		return ansiGray
+	case "medium":
+		return ansiCyan
+	case "high":
+		return ansiYellow
+	case "xhigh":
+		return ansiRed
+	case "max":
+		return ansiBoldRed
+	default:
+		return ""
+	}
+}
+
+func formatExecutionMode(p *model.Payload, opts Options) string {
+	if p == nil || p.Effort == nil {
+		return ""
+	}
+
+	level := strings.TrimSpace(p.Effort.Level)
+	color := effortColor(level)
+	if color == "" {
+		return ""
+	}
+
+	thinkingOn := p.Thinking != nil && p.Thinking.Enabled.Present && p.Thinking.Enabled.Value
+	fastOn := p.FastMode.Present && p.FastMode.Value
+
+	if opts.ASCIIMode {
+		parts := []string{"effort:" + level}
+		if thinkingOn {
+			parts = append(parts, "think")
+		}
+		if fastOn {
+			parts = append(parts, "fast")
+		}
+		return strings.Join(parts, " ")
+	}
+
+	segment := color + "⚙" + level + ansiReset
+	suffix := ""
+	if thinkingOn {
+		suffix += "T"
+	}
+	if fastOn {
+		suffix += "F"
+	}
+	if suffix != "" {
+		segment += " " + ansiGray + suffix + ansiReset
+	}
+	return segment
 }
 
 func formatDuration(ms int64) string {
@@ -441,6 +498,7 @@ func Render(p *model.Payload, git GitInfo, opts Options) (line1, line2 string) {
 	costFmt := fmt.Sprintf("%.2f", p.Cost.TotalCostUSD)
 	cColor := costColor(p.Cost.TotalCostUSD)
 	cacheHit := formatCacheHit(p.ContextWindow.CurrentUsage, opts)
+	executionMode := formatExecutionMode(p, opts)
 
 	// ── Duration ──────────────────────────────────────────────────────────────
 	durStr := formatDuration(p.Cost.TotalDurationMs)
@@ -465,6 +523,9 @@ func Render(p *model.Payload, git GitInfo, opts Options) (line1, line2 string) {
 	var l1 strings.Builder
 	l1.WriteString(purple + sym.brand + ansiReset)
 	l1.WriteString(" " + ansiCyan + p.Model.DisplayName + ansiReset)
+	if executionMode != "" {
+		l1.WriteString(" " + executionMode)
+	}
 	l1.WriteString(sym.sep + bar + " " + pctColor(pct) + fmt.Sprintf("%d%%", pct) + ansiReset)
 	l1.WriteString(warnStr)
 	l1.WriteString(label)
