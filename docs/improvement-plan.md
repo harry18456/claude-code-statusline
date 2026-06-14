@@ -167,7 +167,7 @@ hit_rate = 分子 / 分母
 
 在 statusline 顯示這組「執行模式 = 火力 = 成本」指標。`model.ContextWindow` 所在的 payload struct 需新增解析這三欄位（effort 用指標 / presence 偵測 absent，沿用 `tolerantInt64` 等容錯框架）。顯示位置 / 格式 / 顏色待 propose 定（effort 高訊號優先；thinking / fast 訊號弱、可搭配成一個「模式」小區）。
 
-### 目標 2 — config 機制 env var → 命令列 flag + 全段落可控
+### 目標 2 — config 機制 env var → 命令列 flag + 全段落可控 ✅ 已完成（commit `878075e`：flag.NewFlagSet、env var 廢棄、12 個 hide key、**CLI config 容錯渲染永不消失**、真 binary 驗證）
 
 **動機**：env var 設定不方便（Windows 麻煩、藏在系統看不見、改了要重啟、跟 `settings.json` 脫節）。statusLine 本來就在 `settings.json` 用 command 定義，config 應寫成 command 參數、一眼看到。
 
