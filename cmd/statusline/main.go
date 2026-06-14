@@ -26,7 +26,7 @@ func main() {
 	p, err := model.ParsePayload(os.Stdin)
 	if err != nil {
 		// Fallback: single gray line, exit 0 so Claude Code still works
-		fmt.Printf("\033[90m─ │ parse error\033[0m\n")
+		fmt.Print("\033[90m─ │ parse error\033[0m\n")
 		os.Exit(0)
 	}
 
@@ -48,7 +48,7 @@ func main() {
 	}
 
 	line1, line2 := renderer.Render(p, git, opts)
-	fmt.Printf("%s\n%s", line1, line2)
+	fmt.Print(line1, "\n", line2)
 }
 
 // isenv returns true if the environment variable key equals any of the given values.
