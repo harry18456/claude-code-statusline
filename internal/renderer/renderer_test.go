@@ -348,8 +348,8 @@ func TestFormatExecutionModeEffortLevels(t *testing.T) {
 		t.Run(tt.level, func(t *testing.T) {
 			p := executionModePayload(tt.level, false, false)
 			got := formatExecutionMode(p, DefaultOptions())
-			if stripANSI(got) != "⚙"+tt.level {
-				t.Fatalf("formatExecutionMode() = %q, want ⚙%s", stripANSI(got), tt.level)
+			if stripANSI(got) != "⚙ "+tt.level {
+				t.Fatalf("formatExecutionMode() = %q, want ⚙ %s", stripANSI(got), tt.level)
 			}
 			if !strings.Contains(got, tt.color) {
 				t.Fatalf("formatExecutionMode() color mismatch: got %q, want color %q", got, tt.color)
@@ -365,10 +365,10 @@ func TestFormatExecutionModeOnSuffixes(t *testing.T) {
 		fast     bool
 		want     string
 	}{
-		{name: "thinking only", thinking: true, fast: false, want: "⚙max T"},
-		{name: "fast only", thinking: false, fast: true, want: "⚙max F"},
-		{name: "thinking and fast", thinking: true, fast: true, want: "⚙max TF"},
-		{name: "all off", thinking: false, fast: false, want: "⚙max"},
+		{name: "thinking only", thinking: true, fast: false, want: "⚙ max T"},
+		{name: "fast only", thinking: false, fast: true, want: "⚙ max F"},
+		{name: "thinking and fast", thinking: true, fast: true, want: "⚙ max TF"},
+		{name: "all off", thinking: false, fast: false, want: "⚙ max"},
 	}
 
 	for _, tt := range tests {
@@ -379,7 +379,7 @@ func TestFormatExecutionModeOnSuffixes(t *testing.T) {
 				t.Fatalf("formatExecutionMode() = %q, want %q", stripANSI(got), tt.want)
 			}
 			if tt.thinking || tt.fast {
-				suffix := strings.TrimPrefix(tt.want, "⚙max ")
+				suffix := strings.TrimPrefix(tt.want, "⚙ max ")
 				if !strings.Contains(got, ansiGray+suffix) {
 					t.Fatalf("on suffix should be gray: got %q, want suffix %q in gray", got, suffix)
 				}
@@ -429,8 +429,8 @@ func TestFormatExecutionModeNerdFont(t *testing.T) {
 	opts.NerdFont = true
 	p := executionModePayload("high", true, true)
 	got := formatExecutionMode(p, opts)
-	if stripANSI(got) != "⚙high TF" {
-		t.Fatalf("NerdFont execution mode = %q, want ⚙high TF", stripANSI(got))
+	if stripANSI(got) != "⚙ high TF" {
+		t.Fatalf("NerdFont execution mode = %q, want ⚙ high TF", stripANSI(got))
 	}
 	if !strings.Contains(got, ansiYellow) {
 		t.Fatalf("high effort should be yellow, got %q", got)
@@ -442,10 +442,10 @@ func TestRenderExecutionModeModelAdjacent(t *testing.T) {
 	p := mustParse(t, jsonWithMode)
 	line1, _ := renderWith(p, GitInfo{}, DefaultOptions())
 	plain := stripANSI(line1)
-	if !strings.Contains(plain, "Claude Opus 4.6 ⚙max T") {
+	if !strings.Contains(plain, "Claude Opus 4.6 ⚙ max T") {
 		t.Fatalf("execution mode should sit directly after model, got %q", plain)
 	}
-	if !strings.Contains(plain, "⚙max T") || !strings.Contains(plain, "$0.85") || !strings.Contains(plain, "5h:15%") {
+	if !strings.Contains(plain, "⚙ max T") || !strings.Contains(plain, "$0.85") || !strings.Contains(plain, "5h:15%") {
 		t.Fatalf("execution mode should preserve existing line 1 segments, got %q", plain)
 	}
 }

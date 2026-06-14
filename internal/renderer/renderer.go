@@ -268,7 +268,7 @@ func formatExecutionMode(p *model.Payload, opts Options) string {
 		return strings.Join(parts, " ")
 	}
 
-	segment := color + "⚙" + level + ansiReset
+	segment := color + "⚙ " + level + ansiReset
 	suffix := ""
 	if thinkingOn {
 		suffix += "T"
