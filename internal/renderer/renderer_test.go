@@ -40,6 +40,8 @@ const jsonAgent = `{"model":{"display_name":"Claude Opus 4.6"},"context_window":
 
 const jsonWorktree = `{"model":{"display_name":"Claude Opus 4.6"},"context_window":{"used_percentage":42,"context_window_size":1000000},"cost":{"total_cost_usd":0.85,"total_lines_added":150,"total_lines_removed":30,"total_duration_ms":222000},"workspace":{"current_dir":"/Users/dev/my-project"},"worktree":{"branch":"worktree-my-feature","name":"my-feature","path":"/path/to/worktree"}}`
 
+const jsonAllSections = `{"model":{"display_name":"Claude Opus 4.6"},"effort":{"level":"high"},"thinking":{"enabled":true},"fast_mode":true,"context_window":{"used_percentage":73,"context_window_size":200000,"current_usage":{"input_tokens":1,"output_tokens":374,"cache_creation_input_tokens":1302,"cache_read_input_tokens":144198}},"cost":{"total_cost_usd":0.85,"total_lines_added":150,"total_lines_removed":30,"total_duration_ms":222000},"workspace":{"current_dir":"/Users/dev/my-project"},"worktree":{"branch":"main"},"agent":{"name":"code-reviewer"},"rate_limits":{"five_hour":{"used_percentage":15},"seven_day":{"used_percentage":8}}}`
+
 // ─── Line 1 structure ─────────────────────────────────────────────────────────
 
 func TestRenderLine1ContainsModel(t *testing.T) {
@@ -1420,11 +1422,194 @@ func TestRenderRateLimitCountdownShownBelow80(t *testing.T) {
 	}
 }
 
+func TestRenderHideSections(t *testing.T) {
+	tests := []struct {
+		name       string
+		key        SectionKey
+		line       string
+		mustHide   []string
+		mustRemain []string
+	}{
+		{name: "model", key: SectionModel, line: "line1", mustHide: []string{"Claude Opus 4.6"}, mustRemain: []string{"effort:high think fast"}},
+		{name: "effort", key: SectionEffort, line: "line1", mustHide: []string{"effort:high"}, mustRemain: []string{"Claude Opus 4.6"}},
+		{name: "bar", key: SectionBar, line: "line1", mustHide: []string{"#######---", "73%"}, mustRemain: []string{"200k"}},
+		{name: "size", key: SectionSize, line: "line1", mustHide: []string{"200k"}, mustRemain: []string{"73%"}},
+		{name: "cost", key: SectionCost, line: "line1", mustHide: []string{"$0.85"}, mustRemain: []string{"cache:99%"}},
+		{name: "cache", key: SectionCache, line: "line1", mustHide: []string{"cache:99%"}, mustRemain: []string{"$0.85"}},
+		{name: "duration", key: SectionDuration, line: "line1", mustHide: []string{"3m42s"}, mustRemain: []string{"5h:15%"}},
+		{name: "rate", key: SectionRate, line: "line1", mustHide: []string{"5h:15%", "7d:8%"}, mustRemain: []string{"3m42s"}},
+		{name: "branch", key: SectionBranch, line: "line2", mustHide: []string{"main"}, mustRemain: []string{"my-project"}},
+		{name: "lines", key: SectionLines, line: "line2", mustHide: []string{"+150", "-30"}, mustRemain: []string{"my-project"}},
+		{name: "dir", key: SectionDir, line: "line2", mustHide: []string{"my-project"}, mustRemain: []string{"main"}},
+		{name: "agent", key: SectionAgent, line: "line2", mustHide: []string{"code-reviewer"}, mustRemain: []string{"my-project"}},
+	}
+
+	p := mustParse(t, jsonAllSections)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			line1, line2 := renderWith(p, GitInfo{Branch: "main", Dirty: true}, hiddenASCIIOptions(tt.key))
+			got := stripANSI(line1)
+			if tt.line == "line2" {
+				got = stripANSI(line2)
+			}
+			for _, hidden := range tt.mustHide {
+				if strings.Contains(got, hidden) {
+					t.Fatalf("%s should hide %q, got %q", tt.key, hidden, got)
+				}
+			}
+			for _, visible := range tt.mustRemain {
+				if !strings.Contains(got, visible) {
+					t.Fatalf("%s should keep %q, got %q", tt.key, visible, got)
+				}
+			}
+			assertNoOrphanSeparators(t, line1)
+			assertNoOrphanSeparators(t, line2)
+		})
+	}
+}
+
+func TestRenderHideSectionsDefaultShowsAll(t *testing.T) {
+	p := mustParse(t, jsonAllSections)
+	line1, line2 := renderWith(p, GitInfo{Branch: "main", Dirty: true}, hiddenASCIIOptions())
+	plain1 := stripANSI(line1)
+	plain2 := stripANSI(line2)
+	for _, want := range []string{"Claude Opus 4.6", "effort:high think fast", "#######---", "73%", "200k", "$0.85", "cache:99%", "3m42s", "5h:15%", "7d:8%"} {
+		if !strings.Contains(plain1, want) {
+			t.Fatalf("line1 missing %q: %q", want, plain1)
+		}
+	}
+	for _, want := range []string{"main*", "+150", "-30", "my-project", "code-reviewer"} {
+		if !strings.Contains(plain2, want) {
+			t.Fatalf("line2 missing %q: %q", want, plain2)
+		}
+	}
+}
+
+func TestRenderHideSectionsNoOrphanSeparators(t *testing.T) {
+	p := mustParse(t, jsonAllSections)
+	opts := hiddenASCIIOptions(SectionModel, SectionEffort, SectionBar, SectionSize, SectionCost, SectionCache)
+	line1, line2 := renderWith(p, GitInfo{Branch: "main"}, opts)
+	plain1 := stripANSI(line1)
+	if !strings.Contains(plain1, "3m42s | 5h:15% 7d:8%") {
+		t.Fatalf("remaining line1 sections should have one separator, got %q", plain1)
+	}
+	assertNoOrphanSeparators(t, line1)
+	assertNoOrphanSeparators(t, line2)
+}
+
+func TestRenderHideSectionsAllLineSections(t *testing.T) {
+	p := mustParse(t, jsonAllSections)
+	line1, line2 := renderWith(p, GitInfo{Branch: "main"}, hiddenASCIIOptions(
+		SectionModel,
+		SectionEffort,
+		SectionBar,
+		SectionSize,
+		SectionCost,
+		SectionCache,
+		SectionDuration,
+		SectionRate,
+		SectionBranch,
+		SectionLines,
+		SectionDir,
+		SectionAgent,
+	))
+	if line1 != "" {
+		t.Fatalf("all hidden line1 sections should render empty line1, got %q", line1)
+	}
+	if line2 != "" {
+		t.Fatalf("all hidden line2 sections should render empty line2, got %q", line2)
+	}
+}
+
+func TestRenderHideCostCache(t *testing.T) {
+	tests := []struct {
+		name      string
+		keys      []SectionKey
+		wantCost  bool
+		wantCache bool
+	}{
+		{name: "both visible", wantCost: true, wantCache: true},
+		{name: "cost hidden only", keys: []SectionKey{SectionCost}, wantCache: true},
+		{name: "cache hidden only", keys: []SectionKey{SectionCache}, wantCost: true},
+		{name: "both hidden", keys: []SectionKey{SectionCost, SectionCache}},
+	}
+
+	p := mustParse(t, jsonAllSections)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			line1, _ := renderWith(p, GitInfo{}, hiddenASCIIOptions(tt.keys...))
+			plain := stripANSI(line1)
+			if strings.Contains(plain, "$0.85") != tt.wantCost {
+				t.Fatalf("cost visibility mismatch in %q: %q", tt.name, plain)
+			}
+			if strings.Contains(plain, "cache:99%") != tt.wantCache {
+				t.Fatalf("cache visibility mismatch in %q: %q", tt.name, plain)
+			}
+			assertNoOrphanSeparators(t, line1)
+		})
+	}
+}
+
+func TestRenderHideEffort(t *testing.T) {
+	p := mustParse(t, jsonAllSections)
+	line1, _ := renderWith(p, GitInfo{}, hiddenASCIIOptions(SectionEffort))
+	plain := stripANSI(line1)
+	if strings.Contains(plain, "effort:") || strings.Contains(plain, "think") || strings.Contains(plain, "fast") {
+		t.Fatalf("hidden effort should suppress execution mode, got %q", plain)
+	}
+	if !strings.Contains(plain, "Claude Opus 4.6") {
+		t.Fatalf("hiding effort should keep model, got %q", plain)
+	}
+}
+
+func TestRenderHideRate(t *testing.T) {
+	futureTs := time.Now().Add(4*24*time.Hour + 12*time.Hour).Unix()
+	jsonWithRate := fmt.Sprintf(`{"model":{"display_name":"Claude Opus 4.6"},"context_window":{"used_percentage":73,"context_window_size":200000},"cost":{"total_cost_usd":0.85,"total_duration_ms":222000},"workspace":{"current_dir":"/tmp/x"},"rate_limits":{"five_hour":{"used_percentage":85,"resets_at":%d},"seven_day":{"used_percentage":55,"resets_at":%d}}}`, time.Now().Add(90*time.Minute).Unix(), futureTs)
+	p := mustParse(t, jsonWithRate)
+	line1, _ := renderWith(p, GitInfo{}, hiddenASCIIOptions(SectionRate))
+	plain := stripANSI(line1)
+	for _, hidden := range []string{"5h:", "7d:", "^", "v", "~", "("} {
+		if strings.Contains(plain, hidden) {
+			t.Fatalf("hidden rate should suppress %q, got %q", hidden, plain)
+		}
+	}
+	if !strings.Contains(plain, "3m42s") {
+		t.Fatalf("hiding rate should keep duration, got %q", plain)
+	}
+}
+
 func itoa(n int64) string {
 	return fmt.Sprintf("%d", n)
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
+
+func hiddenASCIIOptions(keys ...SectionKey) Options {
+	opts := DefaultOptions()
+	opts.ASCIIMode = true
+	if len(keys) == 0 {
+		return opts
+	}
+	opts.HiddenSections = make(map[SectionKey]bool, len(keys))
+	for _, key := range keys {
+		opts.HiddenSections[key] = true
+	}
+	return opts
+}
+
+func assertNoOrphanSeparators(t *testing.T, line string) {
+	t.Helper()
+	plain := stripANSI(line)
+	if strings.HasPrefix(plain, " | ") {
+		t.Fatalf("line has leading separator: %q", plain)
+	}
+	if strings.HasSuffix(plain, " | ") {
+		t.Fatalf("line has trailing separator: %q", plain)
+	}
+	if strings.Contains(plain, " |  | ") {
+		t.Fatalf("line has duplicate separators: %q", plain)
+	}
+}
 
 func executionModePayload(level string, thinking, fast bool) *model.Payload {
 	return &model.Payload{

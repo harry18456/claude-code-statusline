@@ -125,33 +125,54 @@ To check the installed version at any time:
 
 ---
 
-## Environment Variables
+## Command-line flags
 
-Set these in your shell profile (`~/.zshrc`, `~/.bashrc`, etc.) or in the Claude Code `env` settings.
+Configure statusline behavior directly in the Claude Code `settings.json` command.
 
-| Variable | Default | Effect |
-|----------|---------|--------|
-| `CLAUDE_STATUSLINE_ASCII` | `0` | Set to `1` for pure ASCII output (`#---`). Use when Unicode is unavailable |
-| `CLAUDE_STATUSLINE_NERDFONT` | `0` | Set to `1` to enable Nerd Font icons (, 󰔟, ). Requires a [Nerd Font](https://www.nerdfonts.com/) in your terminal |
-| `CLAUDE_STATUSLINE_POWERLINE` | follows `NERDFONT` | Set to `1` to use Powerline arrow separators (``) instead of `│`. Enabled automatically when `NERDFONT=1` |
-| `COLORTERM` | system | Set to `truecolor` or `24bit` to enable the RGB gradient progress bar. Most modern terminals set this automatically |
+```json
+{
+  "statusLine": {
+    "type": "command",
+    "command": "C:/Users/YOUR_USERNAME/.claude/statusline.exe --nerdfont --hide effort,duration"
+  }
+}
+```
+
+Breaking change: `CLAUDE_STATUSLINE_ASCII`, `CLAUDE_STATUSLINE_NERDFONT`, and `CLAUDE_STATUSLINE_POWERLINE` are no longer read. Use command-line flags instead.
+
+| Flag | Effect |
+|------|--------|
+| `--ascii` | Pure ASCII output (`#---`). ASCII takes priority if combined with `--nerdfont` or `--powerline` |
+| `--nerdfont` | Enable Nerd Font icons and Powerline separators. Requires a [Nerd Font](https://www.nerdfonts.com/) in your terminal |
+| `--powerline` | Enable Powerline arrow separators without enabling Nerd Font icons |
+| `--hide <keys>` | Hide comma-separated sections. May be repeated; known keys are merged |
+| `--version` | Print the binary version and exit without rendering a status line |
+
+Hide keys: `model`, `effort`, `bar`, `size`, `cost`, `cache`, `duration`, `rate`, `branch`, `lines`, `dir`, `agent`.
+
+Invalid configuration is tolerant: unknown hide keys, conflicting rendering flags, unknown flags, missing `--hide` values, and positional arguments write warnings to stderr for `claude --debug`, then render a status line and exit 0.
+
+`COLORTERM=truecolor|24bit` is still honored as terminal capability detection for the RGB gradient progress bar. It is not project configuration.
 
 ### Rendering tiers
 
-The binary auto-selects the best rendering based on environment:
+The binary selects rendering from flags and terminal capabilities:
 
 | Tier | Condition | Progress bar style |
 |------|-----------|--------------------|
 | True color | `COLORTERM=truecolor` or `24bit` | Per-cell RGB gradient, green → yellow → red |
 | ANSI | default | Solid color based on overall percentage |
-| ASCII | `CLAUDE_STATUSLINE_ASCII=1` | `#` filled, `-` empty |
+| ASCII | `--ascii` | `#` filled, `-` empty |
 
-### Example: Nerd Font + true color
+### Example: Nerd Font + hidden sections
 
-```bash
-# Add to ~/.zshrc or ~/.bashrc
-export CLAUDE_STATUSLINE_NERDFONT=1
-export COLORTERM=truecolor
+```json
+{
+  "statusLine": {
+    "type": "command",
+    "command": "/Users/YOUR_USERNAME/.claude/statusline --nerdfont --hide effort,duration,rate"
+  }
+}
 ```
 
 ---

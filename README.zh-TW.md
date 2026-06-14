@@ -125,33 +125,54 @@ Move-Item statusline-windows-amd64.exe "$env:USERPROFILE\.claude\statusline.exe"
 
 ---
 
-## 環境變數
+## 命令列 flags
 
-在 shell 設定檔（`~/.zshrc`、`~/.bashrc` 等）或 Claude Code 的 `env` 設定中加入。
+直接在 Claude Code `settings.json` 的 command 內設定 statusline 行為。
 
-| 變數 | 預設值 | 效果 |
-|------|--------|------|
-| `CLAUDE_STATUSLINE_ASCII` | `0` | 設為 `1` 啟用純 ASCII 輸出（`#---`）。適用於 Unicode 不可用的環境 |
-| `CLAUDE_STATUSLINE_NERDFONT` | `0` | 設為 `1` 啟用 Nerd Font 圖示（, 󰔟, ）。需要終端機已安裝 [Nerd Font](https://www.nerdfonts.com/) |
-| `CLAUDE_STATUSLINE_POWERLINE` | 跟隨 `NERDFONT` | 設為 `1` 使用 Powerline 箭頭分隔符（``）取代 `│`。`NERDFONT=1` 時自動啟用 |
-| `COLORTERM` | 系統設定 | 設為 `truecolor` 或 `24bit` 啟用 RGB 漸層進度條。大多數現代終端機會自動設定 |
+```json
+{
+  "statusLine": {
+    "type": "command",
+    "command": "C:/Users/你的使用者名稱/.claude/statusline.exe --nerdfont --hide effort,duration"
+  }
+}
+```
+
+Breaking change：`CLAUDE_STATUSLINE_ASCII`、`CLAUDE_STATUSLINE_NERDFONT`、`CLAUDE_STATUSLINE_POWERLINE` 已不再讀取。請改用命令列 flags。
+
+| Flag | 效果 |
+|------|------|
+| `--ascii` | 純 ASCII 輸出（`#---`）。若同時指定 `--nerdfont` 或 `--powerline`，ASCII 優先 |
+| `--nerdfont` | 啟用 Nerd Font 圖示與 Powerline 分隔符。需要終端機已安裝 [Nerd Font](https://www.nerdfonts.com/) |
+| `--powerline` | 只啟用 Powerline 箭頭分隔符，不啟用 Nerd Font 圖示 |
+| `--hide <keys>` | 隱藏逗號分隔的段落。可重複指定；已知 key 會合併 |
+| `--version` | 印出執行檔版本並結束，不渲染 statusline |
+
+Hide keys：`model`、`effort`、`bar`、`size`、`cost`、`cache`、`duration`、`rate`、`branch`、`lines`、`dir`、`agent`。
+
+Config 錯誤採容錯渲染：未知 hide key、衝突的渲染 flags、unknown flag、缺少 `--hide` 值、positional arg 都只會寫 stderr 警告供 `claude --debug` 檢查，仍會渲染 statusline 並 exit 0。
+
+`COLORTERM=truecolor|24bit` 仍作為終端能力偵測，用於 RGB 漸層進度條；它不是本專案 config。
 
 ### 渲染層級
 
-執行檔根據環境自動選擇最佳渲染方式：
+執行檔根據 flags 與終端能力選擇渲染方式：
 
 | 層級 | 條件 | 進度條樣式 |
 |------|------|-----------|
 | True color | `COLORTERM=truecolor` 或 `24bit` | 每格獨立 RGB 漸層，綠 → 黃 → 紅 |
 | ANSI | 預設 | 依整體百分比顯示單一顏色 |
-| ASCII | `CLAUDE_STATUSLINE_ASCII=1` | `#` 已填，`-` 未填 |
+| ASCII | `--ascii` | `#` 已填，`-` 未填 |
 
-### 範例：Nerd Font + true color
+### 範例：Nerd Font + 隱藏段落
 
-```bash
-# 加入 ~/.zshrc 或 ~/.bashrc
-export CLAUDE_STATUSLINE_NERDFONT=1
-export COLORTERM=truecolor
+```json
+{
+  "statusLine": {
+    "type": "command",
+    "command": "/Users/你的使用者名稱/.claude/statusline --nerdfont --hide effort,duration,rate"
+  }
+}
 ```
 
 ---

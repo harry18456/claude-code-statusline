@@ -18,17 +18,61 @@ type GitInfo struct {
 	Dirty  bool
 }
 
-// Options controls rendering behavior driven by environment variables.
+// SectionKey identifies a top-level statusline section that can be hidden.
+type SectionKey string
+
+const (
+	SectionModel    SectionKey = "model"
+	SectionEffort   SectionKey = "effort"
+	SectionBar      SectionKey = "bar"
+	SectionSize     SectionKey = "size"
+	SectionCost     SectionKey = "cost"
+	SectionCache    SectionKey = "cache"
+	SectionDuration SectionKey = "duration"
+	SectionRate     SectionKey = "rate"
+	SectionBranch   SectionKey = "branch"
+	SectionLines    SectionKey = "lines"
+	SectionDir      SectionKey = "dir"
+	SectionAgent    SectionKey = "agent"
+)
+
+var validSectionKeys = map[string]SectionKey{
+	string(SectionModel):    SectionModel,
+	string(SectionEffort):   SectionEffort,
+	string(SectionBar):      SectionBar,
+	string(SectionSize):     SectionSize,
+	string(SectionCost):     SectionCost,
+	string(SectionCache):    SectionCache,
+	string(SectionDuration): SectionDuration,
+	string(SectionRate):     SectionRate,
+	string(SectionBranch):   SectionBranch,
+	string(SectionLines):    SectionLines,
+	string(SectionDir):      SectionDir,
+	string(SectionAgent):    SectionAgent,
+}
+
+// SectionKeyForName returns the canonical section key for a command-line name.
+func SectionKeyForName(name string) (SectionKey, bool) {
+	key, ok := validSectionKeys[name]
+	return key, ok
+}
+
+// Options controls rendering behavior driven by command-line flags and terminal capabilities.
 type Options struct {
-	ASCIIMode bool // CLAUDE_STATUSLINE_ASCII=1
-	NerdFont  bool // CLAUDE_STATUSLINE_NERDFONT=1
-	Powerline bool // CLAUDE_STATUSLINE_POWERLINE=1 (or follows NerdFont)
-	TrueColor bool // COLORTERM=truecolor|24bit
+	ASCIIMode      bool // --ascii
+	NerdFont       bool // --nerdfont
+	Powerline      bool // --powerline (or follows NerdFont)
+	TrueColor      bool // COLORTERM=truecolor|24bit
+	HiddenSections map[SectionKey]bool
 }
 
 // DefaultOptions returns Options with all features disabled (safest fallback).
 func DefaultOptions() Options {
 	return Options{}
+}
+
+func (o Options) hidden(key SectionKey) bool {
+	return o.HiddenSections != nil && o.HiddenSections[key]
 }
 
 // ─── ANSI helpers ─────────────────────────────────────────────────────────────
@@ -520,25 +564,53 @@ func Render(p *model.Payload, git GitInfo, opts Options) (line1, line2 string) {
 	purple := purpleCode(opts.TrueColor)
 
 	// ── Line 1 ────────────────────────────────────────────────────────────────
-	var l1 strings.Builder
-	l1.WriteString(purple + sym.brand + ansiReset)
-	l1.WriteString(" " + ansiCyan + p.Model.DisplayName + ansiReset)
-	if executionMode != "" {
-		l1.WriteString(" " + executionMode)
+	l1Parts := []string{}
+	modelSegment := ""
+	if !opts.hidden(SectionModel) {
+		modelSegment = purple + sym.brand + ansiReset + " " + ansiCyan + p.Model.DisplayName + ansiReset
 	}
-	l1.WriteString(sym.sep + bar + " " + pctColor(pct) + fmt.Sprintf("%d%%", pct) + ansiReset)
-	l1.WriteString(warnStr)
-	l1.WriteString(label)
-	costSegment := cColor + sym.cost + "$" + costFmt + ansiReset
-	if cacheHit != "" {
-		costSegment += " " + cacheHit
+	if !opts.hidden(SectionEffort) && executionMode != "" {
+		if modelSegment != "" {
+			modelSegment += " " + executionMode
+		} else {
+			modelSegment = executionMode
+		}
 	}
-	l1.WriteString(sym.sep + costSegment)
-	if durStr != "" {
-		l1.WriteString(sym.sep + ansiGray + sym.time + durStr + ansiReset)
+	if modelSegment != "" {
+		l1Parts = append(l1Parts, modelSegment)
 	}
-	if len(rateParts) > 0 {
-		l1.WriteString(sym.sep + strings.Join(rateParts, " "))
+
+	barSegment := ""
+	if !opts.hidden(SectionBar) {
+		barSegment = bar + " " + pctColor(pct) + fmt.Sprintf("%d%%", pct) + ansiReset + warnStr
+	}
+	if !opts.hidden(SectionSize) && label != "" {
+		if barSegment != "" {
+			barSegment += label
+		} else {
+			barSegment = strings.TrimSpace(label)
+		}
+	}
+	if barSegment != "" {
+		l1Parts = append(l1Parts, barSegment)
+	}
+
+	costCacheParts := []string{}
+	if !opts.hidden(SectionCost) {
+		costCacheParts = append(costCacheParts, cColor+sym.cost+"$"+costFmt+ansiReset)
+	}
+	if !opts.hidden(SectionCache) && cacheHit != "" {
+		costCacheParts = append(costCacheParts, cacheHit)
+	}
+	if len(costCacheParts) > 0 {
+		l1Parts = append(l1Parts, strings.Join(costCacheParts, " "))
+	}
+
+	if !opts.hidden(SectionDuration) && durStr != "" {
+		l1Parts = append(l1Parts, ansiGray+sym.time+durStr+ansiReset)
+	}
+	if !opts.hidden(SectionRate) && len(rateParts) > 0 {
+		l1Parts = append(l1Parts, strings.Join(rateParts, " "))
 	}
 
 	// ── Line 2 ────────────────────────────────────────────────────────────────
@@ -549,7 +621,7 @@ func Render(p *model.Payload, git GitInfo, opts Options) (line1, line2 string) {
 	if branch == "" {
 		branch = p.Worktree.Branch
 	}
-	if branch != "" {
+	if !opts.hidden(SectionBranch) && branch != "" {
 		dirty := ""
 		if git.Dirty {
 			dirty = "*"
@@ -558,24 +630,29 @@ func Render(p *model.Payload, git GitInfo, opts Options) (line1, line2 string) {
 	}
 
 	// Lines added/removed
-	if p.Cost.TotalLinesAdded > 0 || p.Cost.TotalLinesRemoved > 0 {
+	if !opts.hidden(SectionLines) && (p.Cost.TotalLinesAdded > 0 || p.Cost.TotalLinesRemoved > 0) {
 		parts = append(parts, fmt.Sprintf("%s+%d%s/%s-%d%s",
 			ansiGreen, p.Cost.TotalLinesAdded, ansiReset,
 			ansiRed, p.Cost.TotalLinesRemoved, ansiReset))
 	}
 
 	// Dirname
-	dir := directoryDisplay(p.Workspace.CurrentDir, p.Workspace.ProjectDir)
-	parts = append(parts, ansiBlue+dir+ansiReset)
-
-	// Agent / Worktree indicator
-	if p.Worktree.Name != "" {
-		parts = append(parts, ansiYellow+"⚙ worktree:"+p.Worktree.Name+ansiReset)
-	} else if p.Agent.Name != "" {
-		parts = append(parts, ansiYellow+"⚙ "+p.Agent.Name+ansiReset)
+	if !opts.hidden(SectionDir) {
+		dir := directoryDisplay(p.Workspace.CurrentDir, p.Workspace.ProjectDir)
+		parts = append(parts, ansiBlue+dir+ansiReset)
 	}
 
-	line1 = l1.String()
+	// Agent / Worktree indicator
+	if !opts.hidden(SectionAgent) {
+		if p.Worktree.Name != "" {
+			parts = append(parts, ansiYellow+"⚙ worktree:"+p.Worktree.Name+ansiReset)
+		} else if p.Agent.Name != "" {
+			parts = append(parts, ansiYellow+"⚙ "+p.Agent.Name+ansiReset)
+		}
+
+	}
+
+	line1 = strings.Join(l1Parts, sym.sep)
 	line2 = strings.Join(parts, sym.sep)
 	return line1, line2
 }
