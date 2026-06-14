@@ -240,7 +240,7 @@ func formatDuration(ms int64) string {
 
 // ─── Context window label ─────────────────────────────────────────────────────
 
-func ctxLabel(size int64, modelName string, exceeds200k bool) string {
+func ctxLabel(size int64, exceeds200k bool) string {
 	switch {
 	case size >= 1_000_000:
 		color := ansiGray
@@ -296,6 +296,10 @@ func resolveProjectRoot(currentDir, payloadProjectDir string) string {
 func directoryDisplay(currentDir, projectDir string) string {
 	if currentDir == "" || currentDir == "." {
 		return "."
+	}
+	currentDir = filepath.Clean(currentDir)
+	if projectDir != "" {
+		projectDir = filepath.Clean(projectDir)
 	}
 	root := resolveProjectRoot(currentDir, projectDir)
 	if root == "" {
@@ -431,7 +435,7 @@ func Render(p *model.Payload, git GitInfo, opts Options) (line1, line2 string) {
 	}
 
 	// ── Context label ─────────────────────────────────────────────────────────
-	label := ctxLabel(p.ContextWindow.ContextWindowSize, p.Model.DisplayName, p.ExceedsTokens200k)
+	label := ctxLabel(p.ContextWindow.ContextWindowSize, p.ExceedsTokens200k)
 
 	// ── Cost ──────────────────────────────────────────────────────────────────
 	costFmt := fmt.Sprintf("%.2f", p.Cost.TotalCostUSD)

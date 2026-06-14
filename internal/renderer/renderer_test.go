@@ -224,20 +224,20 @@ func TestRenderContextLabelNotSuppressedWhenModelNameContainsContext(t *testing.
 	}
 }
 
-func TestCtxLabel_ModelNameContainsContextStillShows1M(t *testing.T) {
-	got := ctxLabel(1_000_000, "Opus 4.7 (1M context)", false)
+func TestCtxLabel_1MGrayBelow200k(t *testing.T) {
+	got := ctxLabel(1_000_000, false)
 	if !strings.Contains(got, "1M") {
-		t.Errorf("ctxLabel should emit 1M even when modelName contains 'context', got: %q", got)
+		t.Errorf("ctxLabel should emit 1M, got: %q", got)
 	}
 	if !strings.Contains(got, ansiGray) {
 		t.Errorf("1M label should be gray when exceeds200k=false, got: %q", got)
 	}
 }
 
-func TestCtxLabel_ModelNameContainsContextRedWhenExceeds(t *testing.T) {
-	got := ctxLabel(1_000_000, "Opus 4.6 (1M context)", true)
+func TestCtxLabel_1MRedWhenExceeds(t *testing.T) {
+	got := ctxLabel(1_000_000, true)
 	if !strings.Contains(got, "1M") {
-		t.Errorf("ctxLabel should emit 1M even when modelName contains 'context', got: %q", got)
+		t.Errorf("ctxLabel should emit 1M, got: %q", got)
 	}
 	if !strings.Contains(got, ansiRed) {
 		t.Errorf("1M label should be red when exceeds200k=true, got: %q", got)
