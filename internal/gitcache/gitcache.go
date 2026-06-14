@@ -5,6 +5,7 @@ package gitcache
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -141,9 +142,21 @@ func fetchFromGit(dir string) (branch string, dirty bool, isGit bool) {
 	// Dirty check: staged or unstaged changes
 	errU := gitCmd(dir, "diff", "--quiet").Run()
 	errS := gitCmd(dir, "diff", "--cached", "--quiet").Run()
-	dirty = errU != nil || errS != nil
+	dirty = dirtyFromRunError(errU) || dirtyFromRunError(errS)
 
 	return branch, dirty, true
+}
+
+func dirtyFromRunError(err error) bool {
+	if err == nil {
+		return false
+	}
+
+	var exitErr *exec.ExitError
+	if errors.As(err, &exitErr) && exitErr.ExitCode() == 1 {
+		return true
+	}
+	return false
 }
 
 // gitCmd builds an exec.Cmd for a git subcommand in the given directory.

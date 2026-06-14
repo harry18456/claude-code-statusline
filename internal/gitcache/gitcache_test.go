@@ -151,6 +151,25 @@ func TestNonGitDir(t *testing.T) {
 	}
 }
 
+func TestDirtyFromRunError(t *testing.T) {
+	if dirtyFromRunError(nil) {
+		t.Fatal("nil error should not be dirty")
+	}
+
+	diffErr := gitDiffNoIndexError(t)
+	if !dirtyFromRunError(diffErr) {
+		t.Fatalf("git diff exit 1 should be dirty: %v", diffErr)
+	}
+
+	invalidFlagErr := exec.Command("git", "diff", "--quiet", "--definitely-bogus-flag").Run()
+	if invalidFlagErr == nil {
+		t.Fatal("invalid git diff flag should fail")
+	}
+	if dirtyFromRunError(invalidFlagErr) {
+		t.Fatalf("git diff execution error should not be dirty: %v", invalidFlagErr)
+	}
+}
+
 func TestGetUsesDirectoryIsolatedCache(t *testing.T) {
 	tempRoot := setTestTempDir(t)
 	repoA := initGitRepo(t, "main")
@@ -257,6 +276,25 @@ func TestGetFromRealRepo(t *testing.T) {
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
+
+func gitDiffNoIndexError(t *testing.T) error {
+	t.Helper()
+	dir := t.TempDir()
+	left := filepath.Join(dir, "left.txt")
+	right := filepath.Join(dir, "right.txt")
+	if err := os.WriteFile(left, []byte("left\n"), 0o644); err != nil {
+		t.Fatalf("write left file: %v", err)
+	}
+	if err := os.WriteFile(right, []byte("right\n"), 0o644); err != nil {
+		t.Fatalf("write right file: %v", err)
+	}
+
+	err := exec.Command("git", "diff", "--quiet", "--no-index", left, right).Run()
+	if err == nil {
+		t.Fatal("git diff --no-index should report differences")
+	}
+	return err
+}
 
 func findGitRepo(t *testing.T) string {
 	t.Helper()
