@@ -108,6 +108,12 @@ func readCache(cacheFile string) (branch string, dirty bool, err error) {
 }
 
 // isCacheStale returns true when cacheFile is absent or older than maxAge.
+//
+// Known limitation: freshness compares the file's ModTime against the current
+// wall clock. A backward clock adjustment (NTP correction, manual change) can
+// place ModTime in the future, making time.Since negative so the cache looks
+// permanently fresh until the clock catches up. Acceptable for a 5-second
+// branch/dirty cache.
 func isCacheStale(cacheFile string, maxAge time.Duration) bool {
 	info, err := os.Stat(cacheFile)
 	if err != nil {
