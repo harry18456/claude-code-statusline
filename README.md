@@ -9,7 +9,7 @@ A real-time status line for [Claude Code](https://docs.anthropic.com/en/docs/cla
 ## What You See
 
 ```
-◆ Sonnet 4.6 │ ████████░░ 78% 1M │ $1.23 │ 14m32s │ 5h:85% (1h 23m) 7d:55% ▲7% (3d 9h)
+◆ Sonnet 4.6 ⚙ high │ ████████░░ 78% 1M │ $1.23 ⚡96% │ 14m32s │ 5h:85% (1h 23m) 7d:55% ▲7% (3d 9h)
 ⎇ main* │ +84/-12 │ my-project/internal/renderer │ ⚙ code-reviewer
 ```
 
@@ -19,11 +19,13 @@ A real-time status line for [Claude Code](https://docs.anthropic.com/en/docs/cla
 |---------|---------|-------------|
 | `◆` | `◆` | Anthropic brand diamond (purple). ASCII mode: `<>` |
 | Model | `Sonnet 4.6` | Current Claude model name |
+| Execution effort | `⚙ max` | Reasoning effort from the payload's `effort.level` (`low`/`medium`/`high`/`xhigh`/`max`), shown right after the model name. Color ramps with cost risk: low gray, medium cyan, high yellow, xhigh red, max bold red. A gray `T`/`F` suffix appears when extended thinking / fast mode are on (`⚙ max T`, `⚙ high TF`); off or absent signals are not shown. Hidden entirely when the field is absent (older Claude Code, or a model without effort support) or the level is unknown. ASCII: `effort:max think fast` |
 | Progress bar | `████████░░` | 10-cell context window usage bar |
 | Percentage | `78%` | Context used. Green < 70%, yellow 70–89%, red ≥ 90% |
 | ⚠ warning | `⚠` | Appears only when context ≥ 90% |
 | Context size | `200k` / `1M` | Driven purely by the payload's `context_window_size` field. `1M` turns **red** when `exceeds_200k_tokens=true`, signalling the session has crossed the 200k-token premium-pricing threshold (input 2×, output 1.5×) |
 | Cost | `$1.23` | Cumulative token cost this session (estimate). Yellow > $0, red ≥ $10, gray at $0.00 |
+| Cache hit rate | `⚡99%` | Prompt cache hit rate for the **latest request** (not a session total): `cache_read / (input + cache_creation + cache_read)`. Gray ≥ 80%, yellow 50–79%, red < 50%. Hidden when `current_usage` is absent or null (session start, just after `/compact`) or the denominator is zero. ASCII: `cache:99%` |
 | Duration | `14m32s` | Total session time. Hidden if under 1 second |
 | Rate limits | `5h:85% (1h 23m) 7d:55% ▲7% (3d 9h)` | 5-hour and 7-day quota usage (Claude Pro/Max only). Red when ≥ 80%. Countdown to reset appended when available: `(Xd Yh)` / `(Xh Ym)` / `(Ym)` / `(now)` |
 | 7d pace | `▲7%` / `▼3%` / `≈` | Deviation from daily linear expected usage on the `seven_day` bucket: `expected = ceil(elapsed / 1 day) × (100/7)`, so day 1 expects 14.29%, day 2 expects 28.57%, … day 7 expects 100%. Step boundaries align with the `resets_at` clock time, not calendar midnight. Any non-zero deviation produces a directional indicator: red `▲<N>%` when over-pace, gray `▼<N>%` when under-pace; `<N>` is `round(abs(deviation))` floored at `1`. Gray `≈` only appears when deviation is exactly zero (rare, since `100/7` is not a finite decimal). Suppressed only when `resets_at` is missing or the window has already elapsed. Never shown for the 5-hour bucket. ASCII fallbacks: `^<N>%` / `v<N>%` / `~` |

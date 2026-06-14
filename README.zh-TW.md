@@ -9,7 +9,7 @@
 ## 畫面說明
 
 ```
-◆ Sonnet 4.6 │ ████████░░ 78% 1M │ $1.23 │ 14m32s │ 5h:85% (1h 23m) 7d:55% ▲7% (3d 9h)
+◆ Sonnet 4.6 ⚙ high │ ████████░░ 78% 1M │ $1.23 ⚡96% │ 14m32s │ 5h:85% (1h 23m) 7d:55% ▲7% (3d 9h)
 ⎇ main* │ +84/-12 │ my-project/internal/renderer │ ⚙ code-reviewer
 ```
 
@@ -19,11 +19,13 @@
 |------|------|------|
 | `◆` | `◆` | Anthropic 品牌菱形（紫色）。ASCII 模式顯示 `<>` |
 | 模型 | `Sonnet 4.6` | 目前使用的 Claude 模型名稱 |
+| 執行火力 | `⚙ max` | 來自 payload 的 `effort.level`（`low`/`medium`/`high`/`xhigh`/`max`），顯示在模型名稱後。顏色隨成本風險漸強：low 灰、medium 青、high 黃、xhigh 紅、max 粗紅。開啟 extended thinking／fast mode 時加上灰色 `T`/`F` 後綴（`⚙ max T`、`⚙ high TF`）；關閉或不存在的訊號不顯示。欄位不存在（舊版 Claude Code、或不支援 effort 的模型）或等級未知時整段隱藏。ASCII：`effort:max think fast` |
 | 進度條 | `████████░░` | 10 格上下文視窗使用量 |
 | 百分比 | `78%` | 上下文使用率。綠色 < 70%，黃色 70–89%，紅色 ≥ 90% |
 | ⚠ 警告 | `⚠` | 上下文 ≥ 90% 時才出現 |
 | 視窗大小 | `200k` / `1M` | 完全由 payload 的 `context_window_size` 驅動顯示。當 `exceeds_200k_tokens=true`（session 已跨過 200k token 貴價門檻，input 2×、output 1.5×）時 `1M` 會轉**紅色** |
 | 花費 | `$1.23` | 本次 session 累積 token 費用（估算值）。黃色 > $0，紅色 ≥ $10，$0.00 時顯示為灰色 |
+| 快取命中率 | `⚡99%` | **最近一次 request** 的 prompt cache 命中率（非 session 累計）：`cache_read / (input + cache_creation + cache_read)`。灰 ≥ 80%、黃 50–79%、紅 < 50%。當 `current_usage` 不存在或為 null（session 剛開始、`/compact` 之後）或分母為零時隱藏。ASCII：`cache:99%` |
 | 時間 | `14m32s` | Session 總時長。不足 1 秒時隱藏 |
 | 速率限制 | `5h:85% (1h 23m) 7d:55% ▲7% (3d 9h)` | 5 小時與 7 天配額使用率（僅 Claude Pro/Max）。≥ 80% 時轉紅。有重置時間時附加倒數：`(Xd Yh)` / `(Xh Ym)` / `(Ym)` / `(now)` |
 | 7d 節奏 | `▲7%` / `▼3%` / `≈` | 對 `seven_day` 配額，依**每日線性預期**使用量比對實際用量：`expected = ceil(elapsed / 1 天) × (100/7)`，亦即第 1 天預期 14.29%、第 2 天 28.57%、…、第 7 天 100%。跳階點對齊 `resets_at` 鐘點，非日曆午夜。任何非零偏差都會顯示方向性指標：紅色 `▲<N>%`（超支）或灰色 `▼<N>%`（落後）；`<N>` 為 `round(|偏差|)` 並取下限 `1`。灰色 `≈` 僅在偏差為零時出現（極罕見，因 `100/7` 非有限小數）。僅在缺 `resets_at` 或視窗已過期時不顯示；`5h` 永不顯示此指示。ASCII 模式降級為 `^<N>%` / `v<N>%` / `~` |
