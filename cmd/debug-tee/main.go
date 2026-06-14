@@ -26,7 +26,7 @@ func main() {
 	if logPath == "" {
 		logPath = filepath.Join(os.TempDir(), "cc-statusline-debug.jsonl")
 	}
-	if f, err := os.OpenFile(logPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644); err == nil {
+	if f, err := os.OpenFile(logPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0600); err == nil {
 		f.Write(data)
 		f.WriteString("\n")
 		f.Close()
