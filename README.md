@@ -9,7 +9,7 @@ A real-time status line for [Claude Code](https://docs.anthropic.com/en/docs/cla
 ## What You See
 
 ```
-◆ Sonnet 4.6 ⚙ high │ ████████░░ 78% 1M │ $1.23 ⚡96% │ 14m32s │ 5h:85% (1h 23m) 7d:55% ▲7% (3d 9h)
+◆ Sonnet 4.6 ⚙ high T │ ████████░░ 78% 1M │ $1.23 ⚡96% │ 14m32s │ 5h:85% (1h 23m) 7d:55% ▲7% (3d 9h)
 ⎇ main* │ +84/-12 │ my-project/internal/renderer │ ⚙ code-reviewer
 ```
 

@@ -77,7 +77,7 @@ The binary auto-detects terminal capabilities and renders accordingly:
 |------|---------|-----------|
 | True color | `COLORTERM=truecolor\|24bit` | Per-cell RGB gradient (green→yellow→red) |
 | ANSI | default | Solid color based on overall percentage |
-| ASCII | `CLAUDE_STATUSLINE_ASCII=1` | `#` filled, `-` empty |
+| ASCII | `--ascii` flag | `#` filled, `-` empty |
 
 ### Git dirty-check caching
 
@@ -85,19 +85,30 @@ Git status is cached in `os.TempDir()/claude-statusline-git-cache` for 5 seconds
 
 ### Output structure
 
-- **Line 1**: `◆ model │ progress_bar pct% │ $cost │ duration │ rate_limits` — rate limits show as `5h:85% (1h 23m)` when `resets_at` is present; countdown format: `(Xd Yh)` / `(Xh Ym)` / `(Ym)` / `(now)`
-- **Line 2**: `⎇ branch* │ +added/-removed │ dirname │ ⚙ agent_or_worktree`
+- **Line 1**: `◆ model ⚙ effort │ progress_bar pct% size │ $cost ⚡cache% │ duration │ rate_limits` — the effort glyph (`⚙ low`…`max`, with an optional gray `T`/`F` suffix for thinking/fast mode) sits right after the model name; `size` is the context-window label (`200k`/`1M`, with `1M` turning red past the 200k threshold); a `⚠` follows the percentage at ≥90%; `⚡cache%` is the latest request's prompt-cache hit rate; rate limits show as `5h:85% (1h 23m) 7d:55% ▲7% (3d 9h)` when `resets_at` is present (the 7d bucket carries a `▲`/`▼` pace arrow), countdown format: `(Xd Yh)` / `(Xh Ym)` / `(Ym)` / `(now)`
+- **Line 2**: `⎇ branch* │ +added/-removed │ dirname │ ⚙ agent_or_worktree` — note the line-1 `⚙` is the effort glyph, while this line-2 `⚙` is the active agent or worktree
 
-Zero-value sections are omitted entirely. The `$0.00` cost is shown but dimmed. Duration is suppressed if under 1 second. Worktree indicator takes priority over agent indicator.
+Zero-value sections are omitted entirely. The `$0.00` cost is shown but dimmed. Cache hit rate is hidden when `current_usage` is absent. Duration is suppressed if under 1 second. Worktree indicator takes priority over agent indicator. Any section can be suppressed with `--hide <keys>`.
+
+### CLI flags
+
+Behavior is configured via flags appended to the `statusLine.command` in `settings.json`. The `CLAUDE_STATUSLINE_ASCII`/`NERDFONT`/`POWERLINE` env vars were removed. Use these flags instead:
+
+| Flag | Effect |
+|------|--------|
+| `--ascii` | Pure ASCII, no Unicode (takes priority over `--nerdfont`/`--powerline`) |
+| `--nerdfont` | Nerd Font icons + Powerline separators |
+| `--powerline` | `\ue0b0` arrow separators without Nerd Font icons |
+| `--hide <keys>` | Hide comma-separated sections: `model,effort,bar,size,cost,cache,duration,rate,branch,lines,dir,agent` (repeatable) |
+| `--version` | Print version and exit |
+
+Invalid flags, unknown `--hide` keys, and conflicting render flags emit a stderr warning (visible with `claude --debug`) but still render and exit 0.
 
 ### Environment variables
 
 | Variable | Default | Effect |
 |----------|---------|--------|
-| `CLAUDE_STATUSLINE_ASCII` | `0` | Pure ASCII, no Unicode |
-| `CLAUDE_STATUSLINE_NERDFONT` | `0` | Nerd Font icons + optional Powerline |
-| `CLAUDE_STATUSLINE_POWERLINE` | follows NERDFONT | `\ue0b0` arrow separators |
-| `COLORTERM` | system | `truecolor`/`24bit` enables RGB gradient |
+| `COLORTERM` | system | `truecolor`/`24bit` enables the RGB gradient bar (terminal capability, not project config) |
 
 ### Version injection
 
