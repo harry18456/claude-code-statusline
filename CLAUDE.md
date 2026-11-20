@@ -122,3 +122,7 @@ The `version` variable in `main.go` defaults to `"dev"`. Release builds inject t
 -ldflags="-X main.version=v1.0.0"
 ```
 This is handled automatically by `.github/workflows/release.yml` using `${{ github.ref_name }}`. Local builds via `./dev.sh build` inject `git describe --tags --dirty`. The binary exposes this via `--version`.
+
+### CI
+
+`.github/workflows/test.yml` runs `go vet ./...` and `go test -race -count=1 -v ./...` on `ubuntu-latest` and `windows-latest` for every push to `main` and every pull request (`fail-fast: false`, read-only token). `release.yml` calls it as its first job, so a `v*` tag builds and publishes binaries only after both test jobs pass. The Windows job is the only place where the Windows-specific tests (named pipe, `FILE_SHARE_DELETE`, symlink skipping with admin rights) run outside a developer machine.

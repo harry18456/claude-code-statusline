@@ -5,9 +5,17 @@ on:
     tags:
       - 'v*'
 
+permissions:
+  contents: read
+
 jobs:
+  test:
+    name: Test
+    uses: ./.github/workflows/test.yml
+
   build:
     name: Build (${{ matrix.goos }}/${{ matrix.goarch }})
+    needs: test
     runs-on: ubuntu-latest
 
     strategy:

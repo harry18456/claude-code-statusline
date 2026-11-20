@@ -69,6 +69,19 @@ tests:
   - internal/renderer/renderer_test.go
 -->
 
+
+<!-- @trace
+source: add-ci-race-tests
+updated: 2026-11-20
+code:
+  - .github/workflows/release.yml
+  - .github/workflows/test.yml
+  - debug-sub.json
+  - debug-entra.json
+  - CLAUDE.md
+  - debug.json.bak
+-->
+
 ### Requirement: Attach binaries to GitHub Release
 
 The workflow SHALL create a GitHub Release and attach all compiled binaries as release assets.
@@ -127,7 +140,6 @@ The `install.sh` script SHALL auto-detect the current OS and architecture and do
 
 ## Requirements
 
-
 <!-- @trace
 source: rewrite-to-go
 updated: 2026-03-26
@@ -167,12 +179,13 @@ The release workflow SHALL produce binary artifacts for all supported platforms 
 ---
 ### Requirement: Triggered by git tag push
 
-The release workflow SHALL be triggered automatically when a version tag is pushed.
+The release workflow SHALL be triggered automatically when a version tag is pushed. It SHALL run the test jobs first, and SHALL build and release only after every test job succeeds.
 
 #### Scenario: Tag format
 
 - **WHEN** a tag matching `v*` (e.g., `v1.0.0`) is pushed to the repository
-- **THEN** the GitHub Actions workflow SHALL start building and releasing
+- **THEN** the GitHub Actions workflow SHALL start the test jobs
+- **THEN** the workflow SHALL build and release only after every test job succeeds
 
 ---
 ### Requirement: Attach binaries to GitHub Release
