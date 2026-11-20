@@ -19,11 +19,17 @@ type GitInfo struct {
 }
 
 // SessionInfo carries session data resolved outside the payload by the
-// caller. PeerName is the name other Claude Code sessions use as the
-// SendMessage address; empty when unknown. Render prints PeerName as-is, so
-// the caller must pass an already sanitized name (peername.Lookup does).
+// caller. Render prints both fields as-is, so the caller must pass an
+// already sanitized name and an already validated bridge id
+// (peername.Lookup does both).
 type SessionInfo struct {
+	// PeerName is the SendMessage address for sessions on the same machine;
+	// empty when unknown.
 	PeerName string
+	// BridgeSessionID is the Remote Control bridge id; sessions on other
+	// machines use "bridge:" + BridgeSessionID. Empty when Remote Control
+	// is off.
+	BridgeSessionID string
 }
 
 // SectionKey identifies a top-level statusline section that can be hidden.
@@ -43,6 +49,7 @@ const (
 	SectionDir      SectionKey = "dir"
 	SectionAgent    SectionKey = "agent"
 	SectionSession  SectionKey = "session"
+	SectionBridge   SectionKey = "bridge"
 )
 
 var validSectionKeys = map[string]SectionKey{
@@ -59,6 +66,7 @@ var validSectionKeys = map[string]SectionKey{
 	string(SectionDir):      SectionDir,
 	string(SectionAgent):    SectionAgent,
 	string(SectionSession):  SectionSession,
+	string(SectionBridge):   SectionBridge,
 }
 
 // SectionKeyForName returns the canonical section key for a command-line name.
@@ -337,16 +345,26 @@ func formatExecutionMode(p *model.Payload, opts Options) string {
 	return segment
 }
 
-// formatSessionPeerName renders the line 2 session section, or "" when the
-// peer name is empty.
-func formatSessionPeerName(name string, opts Options) string {
-	if name == "" {
+// formatSessionSection renders the line 2 session section, or "" when the
+// peer name is empty. While Remote Control is connected and the bridge
+// section is not hidden, the bridge address follows the name in the same
+// section.
+func formatSessionSection(session SessionInfo, opts Options) string {
+	if session.PeerName == "" {
 		return ""
 	}
-	if opts.ASCIIMode {
-		return "peer:" + name
+	text := session.PeerName
+	if session.BridgeSessionID != "" && !opts.Hidden(SectionBridge) {
+		sep := " · "
+		if opts.ASCIIMode {
+			sep = " "
+		}
+		text += sep + "bridge:" + session.BridgeSessionID
 	}
-	return ansiGray + "⇄ " + name + ansiReset
+	if opts.ASCIIMode {
+		return "peer:" + text
+	}
+	return ansiGray + "⇄ " + text + ansiReset
 }
 
 func formatDuration(ms int64) string {
@@ -675,9 +693,9 @@ func Render(p *model.Payload, git GitInfo, session SessionInfo, opts Options) (l
 		}
 	}
 
-	// Session peer name (the SendMessage address of this session)
+	// Session peer name and, with Remote Control, the bridge address
 	if !opts.Hidden(SectionSession) {
-		if peer := formatSessionPeerName(session.PeerName, opts); peer != "" {
+		if peer := formatSessionSection(session, opts); peer != "" {
 			parts = append(parts, peer)
 		}
 	}

@@ -1436,7 +1436,8 @@ The only valid hide keys SHALL be:
 | `lines` | Line 2 `+added/-removed` display. |
 | `dir` | Line 2 directory display. |
 | `agent` | Line 2 agent or worktree indicator. |
-| `session` | Line 2 session peer name display. |
+| `session` | Line 2 session peer name display, including the bridge address. |
+| `bridge` | Line 2 Remote Control bridge address inside the session section; the peer name stays visible. |
 
 Hide keys SHALL be lowercase and canonical. The program SHALL trim whitespace around comma-separated keys, ignore empty tokens, and de-duplicate repeated keys. Multiple `--hide` flags SHALL merge into a single hidden set. Unknown non-empty hide keys SHALL be ignored with a stderr warning; known keys from the same `--hide` value SHALL still apply.
 
@@ -1453,7 +1454,7 @@ Hide keys SHALL be lowercase and canonical. The program SHALL trim whitespace ar
 
 #### Scenario: Hide line 2 sections
 
-- **WHEN** the program is invoked with `--hide branch,lines,dir,agent,session`
+- **WHEN** the program is invoked with `--hide branch,lines,dir,agent,session,bridge`
 - **THEN** each listed line 2 section SHALL be omitted even when the payload contains data that would normally render it
 - **THEN** unlisted line 1 sections SHALL remain eligible for rendering
 
@@ -1504,27 +1505,22 @@ Hide keys SHALL be lowercase and canonical. The program SHALL trim whitespace ar
 
 
 <!-- @trace
-source: show-session-peer-name
+source: show-rc-bridge-address
 updated: 2026-11-20
 code:
-  - CLAUDE.md
-  - README.md
-  - internal/model/payload.go
-  - debug-sub.json
-  - internal/peername/open_other.go
   - debug-entra.json
+  - CLAUDE.md
   - debug.json.bak
-  - cmd/statusline/main.go
   - README.zh-TW.md
-  - internal/peername/peername.go
+  - cmd/statusline/main.go
+  - README.md
   - internal/renderer/renderer.go
-  - internal/peername/open_windows.go
+  - debug-sub.json
+  - internal/peername/peername.go
 tests:
-  - internal/peername/peername_test.go
-  - cmd/statusline/session_test.go
-  - internal/model/payload_test.go
-  - internal/peername/peername_windows_test.go
   - internal/renderer/renderer_test.go
+  - cmd/statusline/session_test.go
+  - internal/peername/peername_test.go
 -->
 
 ---
@@ -1715,12 +1711,13 @@ tests:
 ---
 ### Requirement: Session peer name display
 
-The program SHALL display the resolved session peer name as the last visible section of line 2, after the agent or worktree indicator.
+The program SHALL display the resolved session peer name as the last visible section of line 2, after the agent or worktree indicator. When a bridge address is available and the `bridge` section is not hidden, the same section SHALL also show the bridge address after the name.
 
-- In default mode and Nerd Font mode, the section SHALL render as `⇄ <name>` in gray (`\033[90m`), followed by an ANSI reset.
-- In ASCII mode, the section SHALL render as `peer:<name>` with no ANSI color codes and no renderer-added Unicode glyph.
-- When the resolved peer name is empty, the section SHALL be omitted and SHALL NOT emit a separator.
+- In default mode and Nerd Font mode, the section SHALL render as `⇄ <name>` in gray (`\033[90m`), followed by an ANSI reset. With a bridge address, the section SHALL render as `⇄ <name> · bridge:<id>` inside the same gray span.
+- In ASCII mode, the section SHALL render as `peer:<name>` with no ANSI color codes and no renderer-added Unicode glyph. With a bridge address, the section SHALL render as `peer:<name> bridge:<id>`.
+- When the resolved peer name is empty, the section SHALL be omitted and SHALL NOT emit a separator, even when a bridge address is available.
 - When the `session` section is hidden by `--hide`, the section SHALL be omitted and the program SHALL NOT read the session registry.
+- When only the `bridge` section is hidden by `--hide`, the section SHALL render the peer name without the bridge address.
 
 #### Scenario: Default mode display
 
@@ -1732,6 +1729,28 @@ The program SHALL display the resolved session peer name as the last visible sec
 - **WHEN** the resolved peer name is `claude-code-statusline-56` and `--ascii` is set
 - **THEN** line 2 SHALL end with `peer:claude-code-statusline-56`
 - **THEN** the session section SHALL contain no ANSI escape sequence
+
+#### Scenario: Default mode display with bridge address
+
+- **WHEN** the resolved peer name is `claude-code-statusline-56`, the bridge session id is `session_01EXAMPLEb2kQ7mZp4Lx9VdR`, and the program renders in default mode
+- **THEN** line 2 SHALL end with `\033[90m⇄ claude-code-statusline-56 · bridge:session_01EXAMPLEb2kQ7mZp4Lx9VdR\033[0m`
+
+#### Scenario: ASCII mode display with bridge address
+
+- **WHEN** the resolved peer name is `claude-code-statusline-56`, the bridge session id is `session_01EXAMPLEb2kQ7mZp4Lx9VdR`, and `--ascii` is set
+- **THEN** line 2 SHALL end with `peer:claude-code-statusline-56 bridge:session_01EXAMPLEb2kQ7mZp4Lx9VdR`
+- **THEN** the session section SHALL contain no ANSI escape sequence
+
+#### Scenario: Hide only the bridge address
+
+- **WHEN** the program is invoked with `--hide bridge` and both a peer name and a bridge address are available
+- **THEN** line 2 SHALL end with the name-only session section
+- **THEN** line 2 SHALL NOT contain `bridge:`
+
+#### Scenario: Bridge address without a peer name
+
+- **WHEN** the resolved peer name is empty and a bridge session id is set
+- **THEN** line 2 SHALL NOT contain `⇄`, `peer:`, or `bridge:`
 
 #### Scenario: Session section after the agent indicator
 
@@ -1750,26 +1769,85 @@ The program SHALL display the resolved session peer name as the last visible sec
 - **THEN** line 2 SHALL NOT contain the peer name
 - **THEN** the program SHALL NOT read any file under `<config>/sessions/`
 
+
 <!-- @trace
-source: show-session-peer-name
+source: show-rc-bridge-address
 updated: 2026-11-20
 code:
-  - CLAUDE.md
-  - README.md
-  - internal/model/payload.go
-  - debug-sub.json
-  - internal/peername/open_other.go
   - debug-entra.json
+  - CLAUDE.md
   - debug.json.bak
-  - cmd/statusline/main.go
   - README.zh-TW.md
-  - internal/peername/peername.go
+  - cmd/statusline/main.go
+  - README.md
   - internal/renderer/renderer.go
-  - internal/peername/open_windows.go
+  - debug-sub.json
+  - internal/peername/peername.go
 tests:
-  - internal/peername/peername_test.go
-  - cmd/statusline/session_test.go
-  - internal/model/payload_test.go
-  - internal/peername/peername_windows_test.go
   - internal/renderer/renderer_test.go
+  - cmd/statusline/session_test.go
+  - internal/peername/peername_test.go
+-->
+
+---
+### Requirement: Resolve Remote Control bridge address
+
+The program SHALL read the `bridgeSessionId` field from the same registry entry that supplies the session peer name. The bridge address SHALL be `bridge:` followed by that value. Claude Code sets `bridgeSessionId` while the session is connected to Remote Control, sets it to null after Remote Control disconnects, and assigns a new value after each reconnect.
+
+The program SHALL follow these rules:
+
+- The value SHALL be used only when it is a JSON string of 1 to 128 characters, and every character is an ASCII letter, an ASCII digit, `_`, or `-`.
+- A missing, null, non-string, empty, too long, or otherwise invalid value SHALL mean that there is no bridge address.
+- An unusable `bridgeSessionId` SHALL NOT prevent the entry from matching and SHALL NOT change which matching entry wins. The file-level rules of the registry lookup still apply to the whole file: a file larger than 65536 bytes or with invalid JSON is skipped, whatever its `bridgeSessionId` holds.
+- The bridge address SHALL come from the winning entry only. The program SHALL NOT take a bridge value from any other matching entry.
+
+#### Scenario: Connected to Remote Control
+
+- **WHEN** the matching entry contains `"bridgeSessionId":"session_01EXAMPLEb2kQ7mZp4Lx9VdR"`
+- **THEN** the resolved bridge session id SHALL be `session_01EXAMPLEb2kQ7mZp4Lx9VdR`
+
+#### Scenario: Remote Control disconnected
+
+- **WHEN** the matching entry contains `"bridgeSessionId":null`
+- **THEN** there SHALL be no bridge address
+- **THEN** the peer name SHALL still resolve from that entry
+
+##### Example: bridge value handling
+
+| `bridgeSessionId` value | Bridge address | Peer name still resolves |
+| ----------------------- | -------------- | ------------------------ |
+| `"session_01EXAMPLEb2kQ7mZp4Lx9VdR"` | `bridge:session_01EXAMPLEb2kQ7mZp4Lx9VdR` | yes |
+| `"session_01-_Ab9"` | `bridge:session_01-_Ab9` | yes |
+| `null` | none | yes |
+| (absent) | none | yes |
+| `42` | none | yes |
+| `""` | none | yes |
+| `"session_01 bad"` (contains a space) | none | yes |
+| a string that contains ESC | none | yes |
+| a string of 129 `a` characters | none | yes |
+
+#### Scenario: Bridge comes from the winning entry
+
+- **WHEN** `a.json` matches with `updatedAt` 100 and a valid `bridgeSessionId`
+- **WHEN** `b.json` matches with `updatedAt` 200 and `"bridgeSessionId":null`
+- **THEN** the peer name SHALL come from `b.json`
+- **THEN** there SHALL be no bridge address
+
+<!-- @trace
+source: show-rc-bridge-address
+updated: 2026-11-20
+code:
+  - debug-entra.json
+  - CLAUDE.md
+  - debug.json.bak
+  - README.zh-TW.md
+  - cmd/statusline/main.go
+  - README.md
+  - internal/renderer/renderer.go
+  - debug-sub.json
+  - internal/peername/peername.go
+tests:
+  - internal/renderer/renderer_test.go
+  - cmd/statusline/session_test.go
+  - internal/peername/peername_test.go
 -->

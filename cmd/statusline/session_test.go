@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"claude-code-statusline/internal/peername"
 	"claude-code-statusline/internal/renderer"
 )
 
@@ -53,6 +54,14 @@ func TestResolveSession(t *testing.T) {
 			wantName:  "stub-name",
 		},
 		{
+			name:      "hidden bridge still looks up the name",
+			opts:      renderer.Options{HiddenSections: map[renderer.SectionKey]bool{renderer.SectionBridge: true}},
+			sessionID: sessionTestID,
+			homeDir:   homeOK,
+			wantCalls: []call{{sessionID: sessionTestID, dirs: []string{custom, filepath.Join(home, ".claude")}}},
+			wantName:  "stub-name",
+		},
+		{
 			name:      "hidden session skips lookup",
 			opts:      renderer.Options{HiddenSections: map[renderer.SectionKey]bool{renderer.SectionSession: true}},
 			sessionID: sessionTestID,
@@ -75,13 +84,20 @@ func TestResolveSession(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			var calls []call
-			lookup := func(sessionID string, dirs []string) string {
+			lookup := func(sessionID string, dirs []string) peername.Info {
 				calls = append(calls, call{sessionID: sessionID, dirs: dirs})
-				return "stub-name"
+				return peername.Info{Name: "stub-name", BridgeSessionID: "stub_bridge"}
 			}
 			got := resolveSession(tt.opts, tt.sessionID, getenv, tt.homeDir, lookup)
 			if got.PeerName != tt.wantName {
 				t.Fatalf("PeerName = %q, want %q", got.PeerName, tt.wantName)
+			}
+			wantBridge := ""
+			if tt.wantName != "" {
+				wantBridge = "stub_bridge"
+			}
+			if got.BridgeSessionID != wantBridge {
+				t.Fatalf("BridgeSessionID = %q, want %q", got.BridgeSessionID, wantBridge)
 			}
 			if len(calls) != len(tt.wantCalls) {
 				t.Fatalf("lookup calls = %+v, want %+v", calls, tt.wantCalls)
@@ -249,4 +265,112 @@ func stripTestANSI(s string) string {
 		b.WriteByte(s[i])
 	}
 	return b.String()
+}
+
+func TestMainBridgeAddress(t *testing.T) {
+	const bridgeID = "session_01EXAMPLEb2kQ7mZp4Lx9VdR"
+	entry := func(bridgeJSON string) map[string]string {
+		return map[string]string{
+			"42184.json": `{"pid":42184,"sessionId":"` + sessionTestID + `","name":"demo-project-07","nameSource":"derived","updatedAt":1795139396728,"bridgeSessionId":` + bridgeJSON + `}`,
+		}
+	}
+
+	tests := []struct {
+		name      string
+		args      []string
+		registry  map[string]string
+		wantLine2 string // suffix of line 2 after ANSI is stripped
+		absent    []string
+	}{
+		{
+			name:      "connected shows name and bridge",
+			registry:  entry(`"` + bridgeID + `"`),
+			wantLine2: "⇄ demo-project-07 · bridge:" + bridgeID,
+		},
+		{
+			name:      "ascii shows peer and bridge labels",
+			args:      []string{"--ascii"},
+			registry:  entry(`"` + bridgeID + `"`),
+			wantLine2: "| peer:demo-project-07 bridge:" + bridgeID,
+			absent:    []string{"⇄", " · "},
+		},
+		{
+			name:      "hide bridge keeps the name",
+			args:      []string{"--hide", "bridge"},
+			registry:  entry(`"` + bridgeID + `"`),
+			wantLine2: "⇄ demo-project-07",
+			absent:    []string{"bridge:"},
+		},
+		{
+			name:      "disconnected shows only the name",
+			registry:  entry(`null`),
+			wantLine2: "⇄ demo-project-07",
+			absent:    []string{"bridge:"},
+		},
+		{
+			name:      "invalid bridge value shows only the name",
+			registry:  entry(`"session 01; rm -rf"`),
+			wantLine2: "⇄ demo-project-07",
+			absent:    []string{"bridge:", "rm -rf"},
+		},
+		{
+			name:     "hide session hides both",
+			args:     []string{"--hide", "session"},
+			registry: entry(`"` + bridgeID + `"`),
+			absent:   []string{"demo-project-07", "bridge:", "⇄"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			emptyHome := t.TempDir()
+			t.Setenv("HOME", emptyHome)
+			t.Setenv("USERPROFILE", emptyHome)
+
+			configDir := t.TempDir()
+			sessionsDir := filepath.Join(configDir, "sessions")
+			if err := os.MkdirAll(sessionsDir, 0o755); err != nil {
+				t.Fatal(err)
+			}
+			for name, content := range tt.registry {
+				if err := os.WriteFile(filepath.Join(sessionsDir, name), []byte(content), 0o600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			getenv := func(key string) string {
+				if key == "CLAUDE_CONFIG_DIR" {
+					return configDir
+				}
+				return ""
+			}
+
+			var stdout, stderr bytes.Buffer
+			var code int
+			processStderr := captureProcessStderr(t, func() {
+				code = runWithGit(tt.args, strings.NewReader(sessionPayload), &stdout, &stderr, getenv, "test-version", fakeGit)
+			})
+			if code != 0 {
+				t.Fatalf("runWithGit() exit = %d, want 0", code)
+			}
+			if stderr.Len() != 0 || processStderr != "" {
+				t.Fatalf("stderr should be empty, got %q / %q", stderr.String(), processStderr)
+			}
+			lines := strings.Split(stdout.String(), "\n")
+			if len(lines) != 2 {
+				t.Fatalf("stdout should have 2 lines, got %d: %q", len(lines), stdout.String())
+			}
+			line2 := stripTestANSI(lines[1])
+			if tt.wantLine2 != "" && !strings.HasSuffix(line2, tt.wantLine2) {
+				t.Fatalf("line2 should end with %q, got %q", tt.wantLine2, line2)
+			}
+			if strings.HasSuffix(line2, " │ ") || strings.HasSuffix(line2, " | ") {
+				t.Fatalf("line2 should not end with a separator, got %q", line2)
+			}
+			for _, absent := range tt.absent {
+				if strings.Contains(line2, absent) {
+					t.Fatalf("line2 should not contain %q, got %q", absent, line2)
+				}
+			}
+		})
+	}
 }

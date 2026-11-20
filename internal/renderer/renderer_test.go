@@ -1831,3 +1831,90 @@ func TestOptionsHidden(t *testing.T) {
 		t.Fatal("default options should hide nothing")
 	}
 }
+
+// ─── Remote Control bridge address ────────────────────────────────────────────
+
+const testBridgeID = "session_01EXAMPLEb2kQ7mZp4Lx9VdR"
+
+func TestRenderBridgeDefaultMode(t *testing.T) {
+	p := mustParse(t, jsonNormal)
+	_, line2 := Render(p, GitInfo{Branch: "main"}, SessionInfo{PeerName: testPeerName, BridgeSessionID: testBridgeID}, DefaultOptions())
+	want := " │ \033[90m⇄ " + testPeerName + " · bridge:" + testBridgeID + "\033[0m"
+	if !strings.HasSuffix(line2, want) {
+		t.Fatalf("line2 should end with %q, got %q", want, line2)
+	}
+}
+
+func TestRenderBridgeNerdFontMode(t *testing.T) {
+	opts := DefaultOptions()
+	opts.NerdFont = true
+	opts.Powerline = true
+	p := mustParse(t, jsonNormal)
+	_, line2 := Render(p, GitInfo{Branch: "main"}, SessionInfo{PeerName: testPeerName, BridgeSessionID: testBridgeID}, opts)
+	want := " " + string(rune(0xe0b0)) + " \033[90m⇄ " + testPeerName + " · bridge:" + testBridgeID + "\033[0m"
+	if !strings.HasSuffix(line2, want) {
+		t.Fatalf("line2 should end with %q, got %q", want, line2)
+	}
+}
+
+func TestRenderBridgeASCIIMode(t *testing.T) {
+	opts := DefaultOptions()
+	opts.ASCIIMode = true
+	p := mustParse(t, jsonNormal)
+	_, line2 := Render(p, GitInfo{Branch: "main"}, SessionInfo{PeerName: testPeerName, BridgeSessionID: testBridgeID}, opts)
+	want := " | peer:" + testPeerName + " bridge:" + testBridgeID
+	if !strings.HasSuffix(line2, want) {
+		t.Fatalf("line2 should end with %q, got %q", want, line2)
+	}
+	last := line2[strings.LastIndex(line2, " | ")+len(" | "):]
+	if strings.Contains(last, "\033") || containsNonASCII(last) {
+		t.Fatalf("ASCII session section should have no ANSI or Unicode, got %q", last)
+	}
+}
+
+func TestRenderBridgeHiddenByHideBridge(t *testing.T) {
+	p := mustParse(t, jsonNormal)
+	_, line2 := Render(p, GitInfo{Branch: "main"}, SessionInfo{PeerName: testPeerName, BridgeSessionID: testBridgeID}, hiddenASCIIOptions(SectionBridge))
+	if !strings.HasSuffix(line2, " | peer:"+testPeerName) {
+		t.Fatalf("--hide bridge should keep the name-only section, got %q", line2)
+	}
+	if strings.Contains(line2, "bridge:") {
+		t.Fatalf("--hide bridge should omit the bridge address, got %q", line2)
+	}
+}
+
+func TestRenderBridgeHiddenByHideSession(t *testing.T) {
+	p := mustParse(t, jsonNormal)
+	_, line2 := Render(p, GitInfo{Branch: "main"}, SessionInfo{PeerName: testPeerName, BridgeSessionID: testBridgeID}, hiddenASCIIOptions(SectionSession))
+	if strings.Contains(line2, "peer:") || strings.Contains(line2, "bridge:") {
+		t.Fatalf("--hide session should omit the whole section, got %q", line2)
+	}
+	assertNoOrphanSeparators(t, line2)
+}
+
+func TestRenderBridgeWithoutPeerName(t *testing.T) {
+	asciiOpts := DefaultOptions()
+	asciiOpts.ASCIIMode = true
+	for name, opts := range map[string]Options{"default": DefaultOptions(), "ascii": asciiOpts} {
+		t.Run(name, func(t *testing.T) {
+			p := mustParse(t, jsonNormal)
+			_, without := Render(p, GitInfo{Branch: "main"}, SessionInfo{}, opts)
+			_, line2 := Render(p, GitInfo{Branch: "main"}, SessionInfo{BridgeSessionID: testBridgeID}, opts)
+			if line2 != without {
+				t.Fatalf("a bridge id without a peer name changed line2:\n got  %q\n want %q", line2, without)
+			}
+			for _, absent := range []string{"⇄", "peer:", "bridge:"} {
+				if strings.Contains(line2, absent) {
+					t.Fatalf("line2 should not contain %q, got %q", absent, line2)
+				}
+			}
+		})
+	}
+}
+
+func TestSectionKeyForNameBridge(t *testing.T) {
+	key, ok := SectionKeyForName("bridge")
+	if !ok || key != SectionBridge {
+		t.Fatalf("SectionKeyForName(bridge) = (%q, %v), want (%q, true)", key, ok, SectionBridge)
+	}
+}

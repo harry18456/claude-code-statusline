@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -47,8 +48,8 @@ func TestLookupMatchingEntry(t *testing.T) {
 	writeRegistry(t, cfg, "42184.json", `{"pid":42184,"sessionId":"`+testSessionID+`","name":"demo-project-07","nameSource":"derived","status":"idle","updatedAt":1795139396728}`)
 	writeRegistry(t, cfg, "42184.ecac27da.key", "secret")
 
-	if got := Lookup(testSessionID, []string{cfg}); got != "demo-project-07" {
-		t.Fatalf("Lookup() = %q, want %q", got, "demo-project-07")
+	if got := Lookup(testSessionID, []string{cfg}).Name; got != "demo-project-07" {
+		t.Fatalf("Lookup().Name = %q, want %q", got, "demo-project-07")
 	}
 }
 
@@ -59,8 +60,8 @@ func TestLookupConfigDirPrecedence(t *testing.T) {
 	writeRegistry(t, envDir, "1.json", `{"sessionId":"`+testSessionID+`","name":"from-env","updatedAt":100}`)
 	writeRegistry(t, homeDir, "1.json", `{"sessionId":"`+testSessionID+`","name":"from-home","updatedAt":200}`)
 
-	if got := Lookup(testSessionID, []string{envDir, homeDir}); got != "from-env" {
-		t.Fatalf("Lookup() = %q, want %q", got, "from-env")
+	if got := Lookup(testSessionID, []string{envDir, homeDir}).Name; got != "from-env" {
+		t.Fatalf("Lookup().Name = %q, want %q", got, "from-env")
 	}
 }
 
@@ -101,8 +102,8 @@ func TestLookupLenientUpdatedAt(t *testing.T) {
 			for name, content := range tt.files {
 				writeRegistry(t, cfg, name, content)
 			}
-			if got := Lookup("s-1", []string{cfg}); got != tt.want {
-				t.Fatalf("Lookup() = %q, want %q", got, tt.want)
+			if got := Lookup("s-1", []string{cfg}).Name; got != tt.want {
+				t.Fatalf("Lookup().Name = %q, want %q", got, tt.want)
 			}
 		})
 	}
@@ -113,8 +114,8 @@ func TestLookupFallsBackToLaterConfigDir(t *testing.T) {
 	writeRegistry(t, envDir, "1.json", entryJSON("other-session", "other-name"))
 	writeRegistry(t, homeDir, "1.json", entryJSON(testSessionID, "from-home"))
 
-	if got := Lookup(testSessionID, []string{envDir, homeDir}); got != "from-home" {
-		t.Fatalf("Lookup() = %q, want %q", got, "from-home")
+	if got := Lookup(testSessionID, []string{envDir, homeDir}).Name; got != "from-home" {
+		t.Fatalf("Lookup().Name = %q, want %q", got, "from-home")
 	}
 }
 
@@ -172,8 +173,8 @@ func TestLookupMostRecentlyUpdatedWins(t *testing.T) {
 			for name, content := range tt.files {
 				writeRegistry(t, cfg, name, content)
 			}
-			if got := Lookup("s-1", []string{cfg}); got != tt.want {
-				t.Fatalf("Lookup() = %q, want %q", got, tt.want)
+			if got := Lookup("s-1", []string{cfg}).Name; got != tt.want {
+				t.Fatalf("Lookup().Name = %q, want %q", got, tt.want)
 			}
 		})
 	}
@@ -222,8 +223,8 @@ func TestLookupSanitizesName(t *testing.T) {
 			}
 			cfg := t.TempDir()
 			writeRegistry(t, cfg, "1.json", string(content))
-			if got := Lookup(testSessionID, []string{cfg}); got != tt.want {
-				t.Fatalf("Lookup() = %q, want %q", got, tt.want)
+			if got := Lookup(testSessionID, []string{cfg}).Name; got != tt.want {
+				t.Fatalf("Lookup().Name = %q, want %q", got, tt.want)
 			}
 		})
 	}
@@ -234,8 +235,8 @@ func TestLookupControlOnlyNameIsNotAMatch(t *testing.T) {
 	writeRegistry(t, cfg, "a.json", `{"sessionId":"`+testSessionID+`","name":"\n\t\u001b","updatedAt":200}`)
 	writeRegistry(t, cfg, "b.json", `{"sessionId":"`+testSessionID+`","name":"usable","updatedAt":100}`)
 
-	if got := Lookup(testSessionID, []string{cfg}); got != "usable" {
-		t.Fatalf("Lookup() = %q, want %q", got, "usable")
+	if got := Lookup(testSessionID, []string{cfg}).Name; got != "usable" {
+		t.Fatalf("Lookup().Name = %q, want %q", got, "usable")
 	}
 }
 
@@ -243,15 +244,15 @@ func TestLookupFileSizeLimit(t *testing.T) {
 	t.Run("exactly limit is read", func(t *testing.T) {
 		cfg := t.TempDir()
 		writeRegistry(t, cfg, "1.json", paddedEntry(t, maxRegistryFileSize))
-		if got := Lookup(testSessionID, []string{cfg}); got != "padded-name" {
-			t.Fatalf("Lookup() = %q, want %q", got, "padded-name")
+		if got := Lookup(testSessionID, []string{cfg}).Name; got != "padded-name" {
+			t.Fatalf("Lookup().Name = %q, want %q", got, "padded-name")
 		}
 	})
 	t.Run("one byte over limit is skipped", func(t *testing.T) {
 		cfg := t.TempDir()
 		writeRegistry(t, cfg, "1.json", paddedEntry(t, maxRegistryFileSize+1))
-		if got := Lookup(testSessionID, []string{cfg}); got != "" {
-			t.Fatalf("Lookup() = %q, want empty", got)
+		if got := Lookup(testSessionID, []string{cfg}).Name; got != "" {
+			t.Fatalf("Lookup().Name = %q, want empty", got)
 		}
 	})
 }
@@ -311,8 +312,8 @@ func TestLookupUnusableRegistry(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			cfg := t.TempDir()
 			tt.setup(t, cfg)
-			if got := Lookup(testSessionID, []string{cfg}); got != "" {
-				t.Fatalf("Lookup() = %q, want empty", got)
+			if got := Lookup(testSessionID, []string{cfg}).Name; got != "" {
+				t.Fatalf("Lookup().Name = %q, want empty", got)
 			}
 		})
 	}
@@ -330,8 +331,8 @@ func TestLookupSkipsSymlinks(t *testing.T) {
 	if err := os.Symlink(target, filepath.Join(cfg, "sessions", "link.json")); err != nil {
 		t.Skipf("symlink not supported here: %v", err)
 	}
-	if got := Lookup(testSessionID, []string{cfg}); got != "" {
-		t.Fatalf("Lookup() = %q, want empty", got)
+	if got := Lookup(testSessionID, []string{cfg}).Name; got != "" {
+		t.Fatalf("Lookup().Name = %q, want empty", got)
 	}
 }
 
@@ -339,14 +340,14 @@ func TestLookupEmptyInputs(t *testing.T) {
 	cfg := t.TempDir()
 	writeRegistry(t, cfg, "1.json", entryJSON("", "ghost"))
 
-	if got := Lookup("", []string{cfg}); got != "" {
-		t.Fatalf("Lookup(empty id) = %q, want empty", got)
+	if got := Lookup("", []string{cfg}).Name; got != "" {
+		t.Fatalf("Lookup(empty id).Name = %q, want empty", got)
 	}
-	if got := Lookup(testSessionID, nil); got != "" {
-		t.Fatalf("Lookup(nil dirs) = %q, want empty", got)
+	if got := Lookup(testSessionID, nil).Name; got != "" {
+		t.Fatalf("Lookup(nil dirs).Name = %q, want empty", got)
 	}
-	if got := Lookup(testSessionID, []string{""}); got != "" {
-		t.Fatalf("Lookup(empty dir) = %q, want empty", got)
+	if got := Lookup(testSessionID, []string{""}).Name; got != "" {
+		t.Fatalf("Lookup(empty dir).Name = %q, want empty", got)
 	}
 }
 
@@ -476,5 +477,136 @@ func TestOpenSharedAllowsRewriteAndDeleteWhileOpen(t *testing.T) {
 	}
 	if err := os.Remove(path); err != nil {
 		t.Fatalf("delete of an open registry file failed: %v", err)
+	}
+}
+
+const testBridgeID = "session_01EXAMPLEb2kQ7mZp4Lx9VdR"
+
+func TestLookupBridgeSessionID(t *testing.T) {
+	jsonString := func(s string) string {
+		b, err := json.Marshal(s)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return string(b)
+	}
+	esc := string(rune(0x1b))
+	tests := []struct {
+		name       string
+		bridgeJSON string // raw JSON value of bridgeSessionId; empty omits the field
+		wantBridge string
+	}{
+		{name: "valid id", bridgeJSON: jsonString(testBridgeID), wantBridge: testBridgeID},
+		{name: "underscore and dash allowed", bridgeJSON: jsonString("session_01-_Ab9"), wantBridge: "session_01-_Ab9"},
+		{name: "128 characters allowed", bridgeJSON: jsonString(strings.Repeat("a", 128)), wantBridge: strings.Repeat("a", 128)},
+		{name: "null", bridgeJSON: `null`},
+		{name: "absent", bridgeJSON: ""},
+		{name: "number", bridgeJSON: `42`},
+		{name: "object", bridgeJSON: `{"id":"x"}`},
+		{name: "empty string", bridgeJSON: jsonString("")},
+		{name: "contains space", bridgeJSON: jsonString("session_01 bad")},
+		{name: "contains ESC", bridgeJSON: jsonString("session_01" + esc + "[31m")},
+		{name: "contains non-ASCII letter", bridgeJSON: jsonString("session_é")},
+		{name: "contains colon", bridgeJSON: jsonString("bridge:session_01")},
+		{name: "129 characters", bridgeJSON: jsonString(strings.Repeat("a", 129))},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			bridgeField := ""
+			if tt.bridgeJSON != "" {
+				bridgeField = `,"bridgeSessionId":` + tt.bridgeJSON
+			}
+			cfg := t.TempDir()
+			writeRegistry(t, cfg, "1.json", `{"sessionId":"`+testSessionID+`","name":"demo-project-07"`+bridgeField+`}`)
+
+			got := Lookup(testSessionID, []string{cfg})
+			if got.Name != "demo-project-07" {
+				t.Fatalf("Name = %q, want %q (the bridge value must not block the match)", got.Name, "demo-project-07")
+			}
+			if got.BridgeSessionID != tt.wantBridge {
+				t.Fatalf("BridgeSessionID = %q, want %q", got.BridgeSessionID, tt.wantBridge)
+			}
+		})
+	}
+}
+
+func TestLookupBridgeComesFromWinningEntry(t *testing.T) {
+	t.Run("winning entry has no bridge", func(t *testing.T) {
+		cfg := t.TempDir()
+		writeRegistry(t, cfg, "a.json", `{"sessionId":"s-1","name":"old-name","updatedAt":100,"bridgeSessionId":"`+testBridgeID+`"}`)
+		writeRegistry(t, cfg, "b.json", `{"sessionId":"s-1","name":"new-name","updatedAt":200,"bridgeSessionId":null}`)
+		got := Lookup("s-1", []string{cfg})
+		if got.Name != "new-name" || got.BridgeSessionID != "" {
+			t.Fatalf("Lookup() = %+v, want {Name:new-name BridgeSessionID:}", got)
+		}
+	})
+	t.Run("winning entry has a bridge", func(t *testing.T) {
+		cfg := t.TempDir()
+		writeRegistry(t, cfg, "a.json", `{"sessionId":"s-1","name":"old-name","updatedAt":100,"bridgeSessionId":"session_old"}`)
+		writeRegistry(t, cfg, "b.json", `{"sessionId":"s-1","name":"new-name","updatedAt":200,"bridgeSessionId":"session_new"}`)
+		got := Lookup("s-1", []string{cfg})
+		if got.Name != "new-name" || got.BridgeSessionID != "session_new" {
+			t.Fatalf("Lookup() = %+v, want {Name:new-name BridgeSessionID:session_new}", got)
+		}
+	})
+}
+
+func TestLookupBridgeIgnoredWithoutName(t *testing.T) {
+	cfg := t.TempDir()
+	writeRegistry(t, cfg, "1.json", `{"sessionId":"`+testSessionID+`","name":"","bridgeSessionId":"`+testBridgeID+`"}`)
+	if got := Lookup(testSessionID, []string{cfg}); got != (Info{}) {
+		t.Fatalf("Lookup() = %+v, want empty Info", got)
+	}
+}
+
+// TestLookupBridgeWinnerReadFirst puts the winning entry before the losing
+// one in file-name order, so an implementation that takes the bridge from
+// the last file read fails.
+func TestLookupBridgeWinnerReadFirst(t *testing.T) {
+	t.Run("newer entry without bridge is read first", func(t *testing.T) {
+		cfg := t.TempDir()
+		writeRegistry(t, cfg, "12345.json", `{"sessionId":"s-1","name":"new-name","updatedAt":200,"bridgeSessionId":null}`)
+		writeRegistry(t, cfg, "9001.json", `{"sessionId":"s-1","name":"stale-name","updatedAt":100,"bridgeSessionId":"session_stale"}`)
+		got := Lookup("s-1", []string{cfg})
+		if got != (Info{Name: "new-name"}) {
+			t.Fatalf("Lookup() = %+v, want {Name:new-name BridgeSessionID:}", got)
+		}
+	})
+	t.Run("tie keeps the first file and its bridge", func(t *testing.T) {
+		cfg := t.TempDir()
+		writeRegistry(t, cfg, "a.json", `{"sessionId":"s-1","name":"first","updatedAt":100,"bridgeSessionId":"session_a"}`)
+		writeRegistry(t, cfg, "b.json", `{"sessionId":"s-1","name":"second","updatedAt":100,"bridgeSessionId":"session_b"}`)
+		got := Lookup("s-1", []string{cfg})
+		if got != (Info{Name: "first", BridgeSessionID: "session_a"}) {
+			t.Fatalf("Lookup() = %+v, want {Name:first BridgeSessionID:session_a}", got)
+		}
+	})
+	t.Run("bridge is not borrowed from a later config dir", func(t *testing.T) {
+		envDir, homeDir := t.TempDir(), t.TempDir()
+		writeRegistry(t, envDir, "1.json", `{"sessionId":"s-1","name":"from-env","bridgeSessionId":null}`)
+		writeRegistry(t, homeDir, "1.json", `{"sessionId":"s-1","name":"from-home","bridgeSessionId":"session_home"}`)
+		got := Lookup("s-1", []string{envDir, homeDir})
+		if got != (Info{Name: "from-env"}) {
+			t.Fatalf("Lookup() = %+v, want {Name:from-env BridgeSessionID:}", got)
+		}
+	})
+}
+
+// TestValidBridgeIDAllowlist checks every byte value against an independent
+// definition of the allowlist, so a blocklist implementation fails.
+func TestValidBridgeIDAllowlist(t *testing.T) {
+	allowed := regexp.MustCompile(`^[A-Za-z0-9_-]{1,128}$`)
+	for b := 0; b < 256; b++ {
+		id := "session_" + string([]byte{byte(b)})
+		if got, want := validBridgeID(id), allowed.MatchString(id); got != want {
+			t.Errorf("validBridgeID(%q) = %v, want %v", id, got, want)
+		}
+	}
+	for _, n := range []int{0, 1, 127, 128, 129, 1000} {
+		id := strings.Repeat("a", n)
+		if got, want := validBridgeID(id), allowed.MatchString(id); got != want {
+			t.Errorf("validBridgeID(%d x 'a') = %v, want %v", n, got, want)
+		}
 	}
 }

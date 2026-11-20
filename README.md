@@ -39,6 +39,7 @@ A real-time status line for [Claude Code](https://docs.anthropic.com/en/docs/cla
 | Directory | `my-project/internal/renderer` | Project root + relative path (forward slashes). Root resolves via three-step fallback: (1) `workspace.project_dir` if it is a strict ancestor of the current dir, (2) walk upward for a `.git` entry (file or directory), (3) fall back to the current directory's base name. Shows only the base name when the current dir equals the root |
 | Indicator | `⚙ code-reviewer` | Active subagent name, or `⚙ worktree:name` if in a git worktree. Worktree takes priority |
 | Peer name | `⇄ my-project-56` | The name other Claude Code sessions use to message this session: the address that `ListAgents` shows and `SendMessage` accepts. Read from Claude Code's internal session registry (`<config>/sessions/*.json`, where `<config>` is `$CLAUDE_CONFIG_DIR` or `~/.claude`) by matching the payload's `session_id`. It can differ from the AI-generated session title, so the statusline always reads the registry instead of the payload's `session_name`. Interactive sessions start as `<folder>-<xx>` (two hex characters, e.g. `my-project-d1`) and background jobs start with their job id. Claude Code can rename a session later (a background job takes its AI title; an interactive session can get a short auto-generated name), and the section shows the new name on the next refresh. Hidden when no registry entry matches (older Claude Code, or a changed internal format). ASCII: `peer:my-project-56` |
+| Bridge address | `· bridge:session_01…` | Follows the peer name only while the session is connected to Remote Control (`/remote-control`). Sessions on **other machines** cannot reach the peer name; they use this full address (`bridge:` + the registry's `bridgeSessionId`) as the `SendMessage` target. It changes every time Remote Control reconnects, so use the one shown now. Only sessions signed in to your account can use it; still, treat it like an account identifier when you share screenshots. Hide it with `--hide bridge`. ASCII: `peer:<name> bridge:<id>` |
 
 Zero-value segments are hidden entirely (`+0/-0`, `0m0s`, missing rate limits).
 
@@ -149,7 +150,7 @@ Breaking change: `CLAUDE_STATUSLINE_ASCII`, `CLAUDE_STATUSLINE_NERDFONT`, and `C
 | `--hide <keys>` | Hide comma-separated sections. May be repeated; known keys are merged |
 | `--version` | Print the binary version and exit without rendering a status line |
 
-Hide keys: `model`, `effort`, `bar`, `size`, `cost`, `cache`, `duration`, `rate`, `branch`, `lines`, `dir`, `agent`, `session`. Hiding `session` also skips reading the session registry.
+Hide keys: `model`, `effort`, `bar`, `size`, `cost`, `cache`, `duration`, `rate`, `branch`, `lines`, `dir`, `agent`, `session`, `bridge`. Hiding `session` also skips reading the session registry; `bridge` hides only the Remote Control address and keeps the peer name.
 
 Invalid configuration is tolerant: unknown hide keys, conflicting rendering flags, unknown flags, missing `--hide` values, and positional arguments write warnings to stderr for `claude --debug`, then render a status line and exit 0.
 

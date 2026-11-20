@@ -67,16 +67,17 @@ func runWithGit(args []string, stdin io.Reader, stdout, stderr io.Writer, getenv
 	return 0
 }
 
-// resolveSession looks up the session peer name in the Claude Code session
-// registry. It skips the lookup, and every file read, when the session
-// section is hidden or the payload has no session id. A home directory error
-// only drops the <home>/.claude candidate.
+// resolveSession looks up the session peer name, and the Remote Control
+// bridge id when connected, in the Claude Code session registry. It skips
+// the lookup, and every file read, when the session section is hidden or the
+// payload has no session id. A home directory error only drops the
+// <home>/.claude candidate.
 func resolveSession(
 	opts renderer.Options,
 	sessionID string,
 	getenv func(string) string,
 	homeDir func() (string, error),
-	lookup func(sessionID string, configDirs []string) string,
+	lookup func(sessionID string, configDirs []string) peername.Info,
 ) renderer.SessionInfo {
 	if opts.Hidden(renderer.SectionSession) || sessionID == "" {
 		return renderer.SessionInfo{}
@@ -85,7 +86,8 @@ func resolveSession(
 	if err != nil {
 		home = ""
 	}
-	return renderer.SessionInfo{PeerName: lookup(sessionID, peername.ConfigDirs(getenv, home))}
+	info := lookup(sessionID, peername.ConfigDirs(getenv, home))
+	return renderer.SessionInfo{PeerName: info.Name, BridgeSessionID: info.BridgeSessionID}
 }
 
 func parseCLIConfig(args []string, getenv func(string) string) cliConfig {

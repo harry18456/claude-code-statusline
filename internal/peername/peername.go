@@ -20,12 +20,62 @@ import (
 // Real entries are under 1 KiB; larger files are skipped.
 const maxRegistryFileSize = 64 * 1024
 
+// maxBridgeIDLength bounds an accepted bridgeSessionId. Real values are
+// "session_" plus 24 alphanumeric characters.
+const maxBridgeIDLength = 128
+
+// Info is the registry data resolved for one session.
+type Info struct {
+	// Name is the sanitized peer name: the SendMessage address for sessions
+	// on the same machine. Empty when no usable entry matched.
+	Name string
+	// BridgeSessionID is the validated Remote Control bridge id of the
+	// winning entry. Sessions on other machines reach this one at
+	// "bridge:" + BridgeSessionID. Empty when Remote Control is off, the
+	// value is unusable, or Name is empty.
+	BridgeSessionID string
+}
+
 // registryEntry holds the registry fields used for the lookup.
 // Every other field in the file is ignored.
 type registryEntry struct {
-	SessionID string       `json:"sessionId"`
-	Name      string       `json:"name"`
-	UpdatedAt lenientFloat `json:"updatedAt"`
+	SessionID       string        `json:"sessionId"`
+	Name            string        `json:"name"`
+	UpdatedAt       lenientFloat  `json:"updatedAt"`
+	BridgeSessionID lenientString `json:"bridgeSessionId"`
+}
+
+// lenientString decodes a JSON string. Any other JSON value, such as null
+// (Remote Control off) or a number, decodes to "" instead of failing: the
+// bridge id is optional, so its shape must never decide whether an entry
+// matches.
+type lenientString string
+
+func (s *lenientString) UnmarshalJSON(b []byte) error {
+	*s = ""
+	var v string
+	if err := json.Unmarshal(b, &v); err == nil {
+		*s = lenientString(v)
+	}
+	return nil
+}
+
+// validBridgeID reports whether id is 1 to maxBridgeIDLength characters,
+// each an ASCII letter, digit, '_' or '-'. The id is printed as-is and
+// copied as an address, so anything else is rejected.
+func validBridgeID(id string) bool {
+	if id == "" || len(id) > maxBridgeIDLength {
+		return false
+	}
+	for i := 0; i < len(id); i++ {
+		c := id[i]
+		switch {
+		case c >= 'a' && c <= 'z', c >= 'A' && c <= 'Z', c >= '0' && c <= '9', c == '_', c == '-':
+		default:
+			return false
+		}
+	}
+	return true
 }
 
 // lenientFloat decodes a JSON number. Any other JSON value, such as a string
@@ -70,36 +120,37 @@ func ConfigDirs(getenv func(string) string, home string) []string {
 	return dirs
 }
 
-// Lookup returns the sanitized peer name that the session registry records
-// for sessionID, or "" when no usable entry exists.
+// Lookup returns the registry data for sessionID: the sanitized peer name
+// and, when Remote Control is connected, the validated bridge id. It returns
+// an empty Info when no usable entry exists.
 //
 // Config directories are searched in order and the first directory with a
 // match wins. Inside one directory, the match with the greatest updatedAt
-// wins; ties keep the earliest file name. Lookup never reads a file when
-// sessionID is empty.
-func Lookup(sessionID string, configDirs []string) string {
+// wins; ties keep the earliest file name. Both values come from the winning
+// entry. Lookup never reads a file when sessionID is empty.
+func Lookup(sessionID string, configDirs []string) Info {
 	if sessionID == "" {
-		return ""
+		return Info{}
 	}
 	for _, dir := range configDirs {
 		if dir == "" {
 			continue
 		}
-		if name := lookupDir(filepath.Join(dir, "sessions"), sessionID); name != "" {
-			return name
+		if info := lookupDir(filepath.Join(dir, "sessions"), sessionID); info.Name != "" {
+			return info
 		}
 	}
-	return ""
+	return Info{}
 }
 
 // lookupDir scans the regular *.json files directly inside sessionsDir.
-func lookupDir(sessionsDir, sessionID string) string {
+func lookupDir(sessionsDir, sessionID string) Info {
 	entries, err := os.ReadDir(sessionsDir) // sorted by file name
 	if err != nil {
-		return ""
+		return Info{}
 	}
 
-	bestName := ""
+	var best Info
 	var bestUpdatedAt lenientFloat
 	for _, entry := range entries {
 		if !entry.Type().IsRegular() || !strings.HasSuffix(entry.Name(), ".json") {
@@ -113,12 +164,15 @@ func lookupDir(sessionsDir, sessionID string) string {
 		if name == "" {
 			continue
 		}
-		if bestName == "" || reg.UpdatedAt > bestUpdatedAt {
-			bestName = name
+		if best.Name == "" || reg.UpdatedAt > bestUpdatedAt {
+			best = Info{Name: name}
+			if id := string(reg.BridgeSessionID); validBridgeID(id) {
+				best.BridgeSessionID = id
+			}
 			bestUpdatedAt = reg.UpdatedAt
 		}
 	}
-	return bestName
+	return best
 }
 
 // readEntry decodes one registry file. It reports false for any open or read
