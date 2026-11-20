@@ -12,6 +12,7 @@ import (
 
 	"claude-code-statusline/internal/gitcache"
 	"claude-code-statusline/internal/model"
+	"claude-code-statusline/internal/peername"
 	"claude-code-statusline/internal/renderer"
 )
 
@@ -59,9 +60,32 @@ func runWithGit(args []string, stdin io.Reader, stdout, stderr io.Writer, getenv
 		Dirty:  dirty,
 	}
 
-	line1, line2 := renderer.Render(p, git, cfg.Options)
+	session := resolveSession(cfg.Options, string(p.SessionID), getenv, os.UserHomeDir, peername.Lookup)
+
+	line1, line2 := renderer.Render(p, git, session, cfg.Options)
 	fmt.Fprint(stdout, line1, "\n", line2)
 	return 0
+}
+
+// resolveSession looks up the session peer name in the Claude Code session
+// registry. It skips the lookup, and every file read, when the session
+// section is hidden or the payload has no session id. A home directory error
+// only drops the <home>/.claude candidate.
+func resolveSession(
+	opts renderer.Options,
+	sessionID string,
+	getenv func(string) string,
+	homeDir func() (string, error),
+	lookup func(sessionID string, configDirs []string) string,
+) renderer.SessionInfo {
+	if opts.Hidden(renderer.SectionSession) || sessionID == "" {
+		return renderer.SessionInfo{}
+	}
+	home, err := homeDir()
+	if err != nil {
+		home = ""
+	}
+	return renderer.SessionInfo{PeerName: lookup(sessionID, peername.ConfigDirs(getenv, home))}
 }
 
 func parseCLIConfig(args []string, getenv func(string) string) cliConfig {

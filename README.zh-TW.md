@@ -10,7 +10,7 @@
 
 ```
 ◆ Sonnet 4.6 ⚙ high T │ ████████░░ 78% 1M │ $1.23 ⚡96% │ 14m32s │ 5h:85% (1h 23m) 7d:55% ▲7% (3d 9h)
-⎇ main* │ +84/-12 │ my-project/internal/renderer │ ⚙ code-reviewer
+⎇ main* │ +84/-12 │ my-project/internal/renderer │ ⚙ code-reviewer │ ⇄ my-project-56
 ```
 
 ### 第一行
@@ -38,6 +38,7 @@
 | 行數 | `+84/-12` | 本次 session 中 Claude 新增／刪除的行數 |
 | 目錄 | `my-project/internal/renderer` | 專案 root + 相對路徑（正斜線）。Root 依三層 fallback 判定：(1) 若 `workspace.project_dir` 為目前目錄的嚴格祖先則採用；(2) 否則由目前目錄向上搜尋第一個 `.git`（檔案或資料夾）；(3) 都失敗則退回當前目錄的 base name。當 current dir 等於 root 時僅顯示 root base name |
 | 指示器 | `⚙ code-reviewer` | 執行中的子 agent 名稱，或 worktree 時顯示 `⚙ worktree:name`。Worktree 優先於 agent |
+| 定址名稱 | `⇄ my-project-56` | 其他 Claude Code session 傳訊息給這個 session 時用的名稱，也就是 `ListAgents` 顯示、`SendMessage` 接受的地址。用 payload 的 `session_id` 到 Claude Code 內部的 session registry（`<config>/sessions/*.json`，`<config>` 為 `$CLAUDE_CONFIG_DIR` 或 `~/.claude`）比對取得。它**不是** AI 產生的 session 標題。互動 session 的名稱為 `<資料夾名>-<NN>`；背景 job 先用 job id，之後改成 AI 標題。找不到相符項目時隱藏（舊版 Claude Code，或內部格式改變）。ASCII：`peer:my-project-56` |
 
 數值為零的區段會完全隱藏（`+0/-0`、`0m0s`、未提供的速率限制）。
 
@@ -148,11 +149,13 @@ Breaking change：`CLAUDE_STATUSLINE_ASCII`、`CLAUDE_STATUSLINE_NERDFONT`、`CL
 | `--hide <keys>` | 隱藏逗號分隔的段落。可重複指定；已知 key 會合併 |
 | `--version` | 印出執行檔版本並結束，不渲染 statusline |
 
-Hide keys：`model`、`effort`、`bar`、`size`、`cost`、`cache`、`duration`、`rate`、`branch`、`lines`、`dir`、`agent`。
+Hide keys：`model`、`effort`、`bar`、`size`、`cost`、`cache`、`duration`、`rate`、`branch`、`lines`、`dir`、`agent`、`session`。隱藏 `session` 時也不會讀取 session registry。
 
 Config 錯誤採容錯渲染：未知 hide key、衝突的渲染 flags、unknown flag、缺少 `--hide` 值、positional arg 都只會寫 stderr 警告供 `claude --debug` 檢查，仍會渲染 statusline 並 exit 0。
 
 `COLORTERM=truecolor|24bit` 仍作為終端能力偵測，用於 RGB 漸層進度條；它不是本專案 config。
+
+`CLAUDE_CONFIG_DIR` 只用來找 Claude Code 的 session registry 以取得定址名稱（先找 `$CLAUDE_CONFIG_DIR/sessions/`，再找 `~/.claude/sessions/`）。它由你的 Claude Code 設定決定，同樣不是本專案 config。
 
 ### 渲染層級
 

@@ -30,6 +30,19 @@ func (t *tolerantInt64) UnmarshalJSON(b []byte) error {
 	return nil
 }
 
+// TolerantString decodes a JSON string. A null or any non-string JSON value
+// decodes to the empty string instead of failing the whole payload.
+type TolerantString string
+
+func (s *TolerantString) UnmarshalJSON(b []byte) error {
+	*s = ""
+	var v string
+	if err := json.Unmarshal(b, &v); err == nil {
+		*s = TolerantString(v)
+	}
+	return nil
+}
+
 type OptionalBool struct {
 	Value   bool
 	Present bool
@@ -217,6 +230,9 @@ type RateLimits struct {
 
 // Payload is the top-level Claude Code statusLine JSON payload.
 type Payload struct {
+	// SessionID is the Claude Code session id; empty when absent or malformed.
+	SessionID TolerantString `json:"session_id"`
+
 	Model struct {
 		DisplayName string `json:"display_name"`
 	} `json:"model"`

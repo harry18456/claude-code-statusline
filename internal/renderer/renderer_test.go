@@ -23,7 +23,7 @@ func mustParse(t *testing.T, jsonStr string) *model.Payload {
 
 // helper: render with a given mode
 func renderWith(p *model.Payload, gitInfo GitInfo, opts Options) (string, string) {
-	return Render(p, gitInfo, opts)
+	return Render(p, gitInfo, SessionInfo{}, opts)
 }
 
 // ─── Scenario fixtures ───────────────────────────────────────────────────────
@@ -1657,4 +1657,177 @@ func stripANSI(s string) string {
 // TestMain allows reading env vars for integration-style checks.
 func TestMain(m *testing.M) {
 	os.Exit(m.Run())
+}
+
+// ─── Session peer name ────────────────────────────────────────────────────────
+
+const testPeerName = "demo-project-07"
+
+func TestRenderSessionPeerNameDefaultMode(t *testing.T) {
+	p := mustParse(t, jsonNormal)
+	_, line2 := Render(p, GitInfo{Branch: "main"}, SessionInfo{PeerName: testPeerName}, DefaultOptions())
+	want := " │ \033[90m⇄ " + testPeerName + "\033[0m"
+	if !strings.HasSuffix(line2, want) {
+		t.Fatalf("line2 should end with %q, got %q", want, line2)
+	}
+}
+
+func TestRenderSessionPeerNameNerdFontMode(t *testing.T) {
+	opts := DefaultOptions()
+	opts.NerdFont = true
+	opts.Powerline = true
+	p := mustParse(t, jsonNormal)
+	_, line2 := Render(p, GitInfo{Branch: "main"}, SessionInfo{PeerName: testPeerName}, opts)
+	powerlineArrow := string(rune(0xe0b0))
+	want := " " + powerlineArrow + " \033[90m⇄ " + testPeerName + "\033[0m"
+	if !strings.HasSuffix(line2, want) {
+		t.Fatalf("line2 should end with %q, got %q", want, line2)
+	}
+}
+
+func TestRenderSessionPeerNameASCIIMode(t *testing.T) {
+	opts := DefaultOptions()
+	opts.ASCIIMode = true
+	p := mustParse(t, jsonNormal)
+	_, line2 := Render(p, GitInfo{Branch: "main"}, SessionInfo{PeerName: testPeerName}, opts)
+	if !strings.HasSuffix(line2, " | peer:"+testPeerName) {
+		t.Fatalf("line2 should end with %q, got %q", " | peer:"+testPeerName, line2)
+	}
+	last := line2[strings.LastIndex(line2, " | ")+len(" | "):]
+	if strings.Contains(last, "\033") || containsNonASCII(last) {
+		t.Fatalf("ASCII session section should have no ANSI or Unicode, got %q", last)
+	}
+	assertNoOrphanSeparators(t, line2)
+}
+
+func TestRenderSessionPeerNameKeepsNameText(t *testing.T) {
+	p := mustParse(t, jsonNormal)
+	_, line2 := Render(p, GitInfo{Branch: "main"}, SessionInfo{PeerName: "session id 顯示查詢"}, DefaultOptions())
+	if !strings.HasSuffix(stripANSI(line2), " │ ⇄ session id 顯示查詢") {
+		t.Fatalf("line2 should end with the peer name as-is, got %q", stripANSI(line2))
+	}
+}
+
+func TestRenderSessionPeerNameAfterAgentAndWorktree(t *testing.T) {
+	tests := []struct {
+		name string
+		json string
+		want string
+	}{
+		{name: "agent", json: jsonAgent, want: "⚙ code-reviewer │ ⇄ " + testPeerName},
+		{name: "worktree", json: jsonWorktree, want: "⚙ worktree:my-feature │ ⇄ " + testPeerName},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			p := mustParse(t, tt.json)
+			_, line2 := Render(p, GitInfo{}, SessionInfo{PeerName: testPeerName}, DefaultOptions())
+			plain := stripANSI(line2)
+			if !strings.HasSuffix(plain, tt.want) {
+				t.Fatalf("line2 should end with %q, got %q", tt.want, plain)
+			}
+		})
+	}
+}
+
+func TestRenderLine2FullOrderWithSession(t *testing.T) {
+	p := mustParse(t, jsonAllSections)
+	_, line2 := Render(p, GitInfo{Branch: "main", Dirty: true}, SessionInfo{PeerName: testPeerName}, hiddenASCIIOptions())
+	want := ">main* | +150/-30 | my-project | ⚙ code-reviewer | peer:" + testPeerName
+	if got := stripANSI(line2); got != want {
+		t.Fatalf("line2 = %q, want %q", got, want)
+	}
+}
+
+func TestRenderSessionPeerNameEmptyLeavesLine2Unchanged(t *testing.T) {
+	asciiOpts := DefaultOptions()
+	asciiOpts.ASCIIMode = true
+	tests := []struct {
+		name string
+		opts Options
+		want string
+	}{
+		{name: "default", opts: DefaultOptions(), want: "⎇ main │ +150/-30 │ my-project │ ⚙ code-reviewer"},
+		{name: "ascii", opts: asciiOpts, want: ">main | +150/-30 | my-project | ⚙ code-reviewer"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			p := mustParse(t, jsonAgent)
+			_, line2 := Render(p, GitInfo{Branch: "main"}, SessionInfo{}, tt.opts)
+			if got := stripANSI(line2); got != tt.want {
+				t.Fatalf("line2 = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestRenderHideSession(t *testing.T) {
+	p := mustParse(t, jsonAllSections)
+	line1, line2 := Render(p, GitInfo{Branch: "main", Dirty: true}, SessionInfo{PeerName: testPeerName}, hiddenASCIIOptions(SectionSession))
+	plain := stripANSI(line2)
+	if strings.Contains(plain, testPeerName) || strings.Contains(plain, "peer:") {
+		t.Fatalf("--hide session should omit the peer name, got %q", plain)
+	}
+	for _, want := range []string{"main*", "+150", "my-project", "code-reviewer"} {
+		if !strings.Contains(plain, want) {
+			t.Fatalf("--hide session should keep %q, got %q", want, plain)
+		}
+	}
+	assertNoOrphanSeparators(t, line1)
+	assertNoOrphanSeparators(t, line2)
+}
+
+func TestRenderHideLine1KeepsSession(t *testing.T) {
+	p := mustParse(t, jsonAllSections)
+	line1, line2 := Render(p, GitInfo{Branch: "main"}, SessionInfo{PeerName: testPeerName},
+		hiddenASCIIOptions(SectionModel, SectionEffort, SectionBar, SectionSize, SectionCost, SectionCache, SectionDuration, SectionRate))
+	if line1 != "" {
+		t.Fatalf("all hidden line1 sections should render empty line1, got %q", line1)
+	}
+	if !strings.HasSuffix(line2, " | peer:"+testPeerName) {
+		t.Fatalf("hiding line1 sections should keep the session section, got %q", stripANSI(line2))
+	}
+}
+
+func TestRenderSessionOnlyVisibleLine2Section(t *testing.T) {
+	p := mustParse(t, jsonAllSections)
+	_, line2 := Render(p, GitInfo{Branch: "main"}, SessionInfo{PeerName: testPeerName},
+		hiddenASCIIOptions(SectionBranch, SectionLines, SectionDir, SectionAgent))
+	if line2 != "peer:"+testPeerName {
+		t.Fatalf("line2 = %q, want %q", line2, "peer:"+testPeerName)
+	}
+}
+
+func TestRenderHideAllLine2SectionsIncludingSession(t *testing.T) {
+	p := mustParse(t, jsonAllSections)
+	line1, line2 := Render(p, GitInfo{Branch: "main"}, SessionInfo{PeerName: testPeerName},
+		hiddenASCIIOptions(SectionBranch, SectionLines, SectionDir, SectionAgent, SectionSession))
+	if line2 != "" {
+		t.Fatalf("all hidden line2 sections should render empty line2, got %q", line2)
+	}
+	plain1 := stripANSI(line1)
+	for _, want := range []string{"Claude Opus 4.6", "effort:high think fast", "$0.85", "5h:15%"} {
+		if !strings.Contains(plain1, want) {
+			t.Fatalf("hiding line2 sections should leave line1 intact; missing %q in %q", want, plain1)
+		}
+	}
+}
+
+func TestSectionKeyForNameSession(t *testing.T) {
+	key, ok := SectionKeyForName("session")
+	if !ok || key != SectionSession {
+		t.Fatalf("SectionKeyForName(session) = (%q, %v), want (%q, true)", key, ok, SectionSession)
+	}
+}
+
+func TestOptionsHidden(t *testing.T) {
+	opts := hiddenASCIIOptions(SectionSession)
+	if !opts.Hidden(SectionSession) {
+		t.Fatal("Hidden(session) should be true when session is hidden")
+	}
+	if opts.Hidden(SectionDir) {
+		t.Fatal("Hidden(dir) should be false when only session is hidden")
+	}
+	if DefaultOptions().Hidden(SectionSession) {
+		t.Fatal("default options should hide nothing")
+	}
 }

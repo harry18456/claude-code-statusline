@@ -588,3 +588,39 @@ func TestParsePayload_RateLimitAbsent(t *testing.T) {
 		t.Error("seven_day should NOT be present")
 	}
 }
+
+func TestParsePayload_SessionID(t *testing.T) {
+	const rest = `"model":{"display_name":"Claude Opus 4.6"},"context_window":{"used_percentage":42,"context_window_size":200000},"cost":{"total_cost_usd":0.85},"workspace":{"current_dir":"/Users/dev/my-project"}`
+	tests := []struct {
+		name string
+		json string
+		want string
+	}{
+		{name: "string", json: `{"session_id":"aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee",` + rest + `}`, want: "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee"},
+		{name: "absent", json: `{` + rest + `}`, want: ""},
+		{name: "null", json: `{"session_id":null,` + rest + `}`, want: ""},
+		{name: "number", json: `{"session_id":123,` + rest + `}`, want: ""},
+		{name: "object", json: `{"session_id":{"id":"x"},` + rest + `}`, want: ""},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			p, err := ParsePayload(strings.NewReader(tt.json))
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if got := string(p.SessionID); got != tt.want {
+				t.Fatalf("SessionID: got %q, want %q", got, tt.want)
+			}
+			if p.Model.DisplayName != "Claude Opus 4.6" {
+				t.Fatalf("Model.DisplayName: got %q, want %q", p.Model.DisplayName, "Claude Opus 4.6")
+			}
+			if p.ContextWindow.UsedPercentage != 42 {
+				t.Fatalf("ContextWindow.UsedPercentage: got %v, want 42", p.ContextWindow.UsedPercentage)
+			}
+			if p.Workspace.CurrentDir != "/Users/dev/my-project" {
+				t.Fatalf("Workspace.CurrentDir: got %q, want %q", p.Workspace.CurrentDir, "/Users/dev/my-project")
+			}
+		})
+	}
+}

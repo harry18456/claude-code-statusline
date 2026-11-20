@@ -18,6 +18,14 @@ type GitInfo struct {
 	Dirty  bool
 }
 
+// SessionInfo carries session data resolved outside the payload by the
+// caller. PeerName is the name other Claude Code sessions use as the
+// SendMessage address; empty when unknown. Render prints PeerName as-is, so
+// the caller must pass an already sanitized name (peername.Lookup does).
+type SessionInfo struct {
+	PeerName string
+}
+
 // SectionKey identifies a top-level statusline section that can be hidden.
 type SectionKey string
 
@@ -34,6 +42,7 @@ const (
 	SectionLines    SectionKey = "lines"
 	SectionDir      SectionKey = "dir"
 	SectionAgent    SectionKey = "agent"
+	SectionSession  SectionKey = "session"
 )
 
 var validSectionKeys = map[string]SectionKey{
@@ -49,6 +58,7 @@ var validSectionKeys = map[string]SectionKey{
 	string(SectionLines):    SectionLines,
 	string(SectionDir):      SectionDir,
 	string(SectionAgent):    SectionAgent,
+	string(SectionSession):  SectionSession,
 }
 
 // SectionKeyForName returns the canonical section key for a command-line name.
@@ -71,7 +81,8 @@ func DefaultOptions() Options {
 	return Options{}
 }
 
-func (o Options) hidden(key SectionKey) bool {
+// Hidden reports whether --hide suppresses the section identified by key.
+func (o Options) Hidden(key SectionKey) bool {
 	return o.HiddenSections != nil && o.HiddenSections[key]
 }
 
@@ -326,6 +337,18 @@ func formatExecutionMode(p *model.Payload, opts Options) string {
 	return segment
 }
 
+// formatSessionPeerName renders the line 2 session section, or "" when the
+// peer name is empty.
+func formatSessionPeerName(name string, opts Options) string {
+	if name == "" {
+		return ""
+	}
+	if opts.ASCIIMode {
+		return "peer:" + name
+	}
+	return ansiGray + "⇄ " + name + ansiReset
+}
+
 func formatDuration(ms int64) string {
 	if ms <= 0 {
 		return ""
@@ -519,8 +542,9 @@ func formatRate(label string, rl model.RateLimit, now time.Time, opts Options) s
 // ─── Render ───────────────────────────────────────────────────────────────────
 
 // Render produces the two status lines.
-// It does NOT run git itself — the caller passes pre-resolved GitInfo.
-func Render(p *model.Payload, git GitInfo, opts Options) (line1, line2 string) {
+// It does NOT run git or read the session registry itself — the caller
+// passes pre-resolved GitInfo and SessionInfo.
+func Render(p *model.Payload, git GitInfo, session SessionInfo, opts Options) (line1, line2 string) {
 	sym := symbolSet(opts)
 
 	// ── Percent ──────────────────────────────────────────────────────────────
@@ -566,10 +590,10 @@ func Render(p *model.Payload, git GitInfo, opts Options) (line1, line2 string) {
 	// ── Line 1 ────────────────────────────────────────────────────────────────
 	l1Parts := []string{}
 	modelSegment := ""
-	if !opts.hidden(SectionModel) {
+	if !opts.Hidden(SectionModel) {
 		modelSegment = purple + sym.brand + ansiReset + " " + ansiCyan + p.Model.DisplayName + ansiReset
 	}
-	if !opts.hidden(SectionEffort) && executionMode != "" {
+	if !opts.Hidden(SectionEffort) && executionMode != "" {
 		if modelSegment != "" {
 			modelSegment += " " + executionMode
 		} else {
@@ -581,10 +605,10 @@ func Render(p *model.Payload, git GitInfo, opts Options) (line1, line2 string) {
 	}
 
 	barSegment := ""
-	if !opts.hidden(SectionBar) {
+	if !opts.Hidden(SectionBar) {
 		barSegment = bar + " " + pctColor(pct) + fmt.Sprintf("%d%%", pct) + ansiReset + warnStr
 	}
-	if !opts.hidden(SectionSize) && label != "" {
+	if !opts.Hidden(SectionSize) && label != "" {
 		if barSegment != "" {
 			barSegment += label
 		} else {
@@ -596,20 +620,20 @@ func Render(p *model.Payload, git GitInfo, opts Options) (line1, line2 string) {
 	}
 
 	costCacheParts := []string{}
-	if !opts.hidden(SectionCost) {
+	if !opts.Hidden(SectionCost) {
 		costCacheParts = append(costCacheParts, cColor+sym.cost+"$"+costFmt+ansiReset)
 	}
-	if !opts.hidden(SectionCache) && cacheHit != "" {
+	if !opts.Hidden(SectionCache) && cacheHit != "" {
 		costCacheParts = append(costCacheParts, cacheHit)
 	}
 	if len(costCacheParts) > 0 {
 		l1Parts = append(l1Parts, strings.Join(costCacheParts, " "))
 	}
 
-	if !opts.hidden(SectionDuration) && durStr != "" {
+	if !opts.Hidden(SectionDuration) && durStr != "" {
 		l1Parts = append(l1Parts, ansiGray+sym.time+durStr+ansiReset)
 	}
-	if !opts.hidden(SectionRate) && len(rateParts) > 0 {
+	if !opts.Hidden(SectionRate) && len(rateParts) > 0 {
 		l1Parts = append(l1Parts, strings.Join(rateParts, " "))
 	}
 
@@ -621,7 +645,7 @@ func Render(p *model.Payload, git GitInfo, opts Options) (line1, line2 string) {
 	if branch == "" {
 		branch = p.Worktree.Branch
 	}
-	if !opts.hidden(SectionBranch) && branch != "" {
+	if !opts.Hidden(SectionBranch) && branch != "" {
 		dirty := ""
 		if git.Dirty {
 			dirty = "*"
@@ -630,26 +654,32 @@ func Render(p *model.Payload, git GitInfo, opts Options) (line1, line2 string) {
 	}
 
 	// Lines added/removed
-	if !opts.hidden(SectionLines) && (p.Cost.TotalLinesAdded > 0 || p.Cost.TotalLinesRemoved > 0) {
+	if !opts.Hidden(SectionLines) && (p.Cost.TotalLinesAdded > 0 || p.Cost.TotalLinesRemoved > 0) {
 		parts = append(parts, fmt.Sprintf("%s+%d%s/%s-%d%s",
 			ansiGreen, p.Cost.TotalLinesAdded, ansiReset,
 			ansiRed, p.Cost.TotalLinesRemoved, ansiReset))
 	}
 
 	// Dirname
-	if !opts.hidden(SectionDir) {
+	if !opts.Hidden(SectionDir) {
 		dir := directoryDisplay(p.Workspace.CurrentDir, p.Workspace.ProjectDir)
 		parts = append(parts, ansiBlue+dir+ansiReset)
 	}
 
 	// Agent / Worktree indicator
-	if !opts.hidden(SectionAgent) {
+	if !opts.Hidden(SectionAgent) {
 		if p.Worktree.Name != "" {
 			parts = append(parts, ansiYellow+"⚙ worktree:"+p.Worktree.Name+ansiReset)
 		} else if p.Agent.Name != "" {
 			parts = append(parts, ansiYellow+"⚙ "+p.Agent.Name+ansiReset)
 		}
+	}
 
+	// Session peer name (the SendMessage address of this session)
+	if !opts.Hidden(SectionSession) {
+		if peer := formatSessionPeerName(session.PeerName, opts); peer != "" {
+			parts = append(parts, peer)
+		}
 	}
 
 	line1 = strings.Join(l1Parts, sym.sep)

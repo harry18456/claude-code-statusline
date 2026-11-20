@@ -10,7 +10,7 @@ A real-time status line for [Claude Code](https://docs.anthropic.com/en/docs/cla
 
 ```
 ◆ Sonnet 4.6 ⚙ high T │ ████████░░ 78% 1M │ $1.23 ⚡96% │ 14m32s │ 5h:85% (1h 23m) 7d:55% ▲7% (3d 9h)
-⎇ main* │ +84/-12 │ my-project/internal/renderer │ ⚙ code-reviewer
+⎇ main* │ +84/-12 │ my-project/internal/renderer │ ⚙ code-reviewer │ ⇄ my-project-56
 ```
 
 ### Line 1
@@ -38,6 +38,7 @@ A real-time status line for [Claude Code](https://docs.anthropic.com/en/docs/cla
 | Lines | `+84/-12` | Lines added/removed by Claude this session |
 | Directory | `my-project/internal/renderer` | Project root + relative path (forward slashes). Root resolves via three-step fallback: (1) `workspace.project_dir` if it is a strict ancestor of the current dir, (2) walk upward for a `.git` entry (file or directory), (3) fall back to the current directory's base name. Shows only the base name when the current dir equals the root |
 | Indicator | `⚙ code-reviewer` | Active subagent name, or `⚙ worktree:name` if in a git worktree. Worktree takes priority |
+| Peer name | `⇄ my-project-56` | The name other Claude Code sessions use to message this session: the address that `ListAgents` shows and `SendMessage` accepts. Read from Claude Code's internal session registry (`<config>/sessions/*.json`, where `<config>` is `$CLAUDE_CONFIG_DIR` or `~/.claude`) by matching the payload's `session_id`. It is **not** the AI-generated session title. Interactive sessions are named `<folder>-<NN>`; background jobs start with their job id and later take an AI title. Hidden when no registry entry matches (older Claude Code, or a changed internal format). ASCII: `peer:my-project-56` |
 
 Zero-value segments are hidden entirely (`+0/-0`, `0m0s`, missing rate limits).
 
@@ -148,11 +149,13 @@ Breaking change: `CLAUDE_STATUSLINE_ASCII`, `CLAUDE_STATUSLINE_NERDFONT`, and `C
 | `--hide <keys>` | Hide comma-separated sections. May be repeated; known keys are merged |
 | `--version` | Print the binary version and exit without rendering a status line |
 
-Hide keys: `model`, `effort`, `bar`, `size`, `cost`, `cache`, `duration`, `rate`, `branch`, `lines`, `dir`, `agent`.
+Hide keys: `model`, `effort`, `bar`, `size`, `cost`, `cache`, `duration`, `rate`, `branch`, `lines`, `dir`, `agent`, `session`. Hiding `session` also skips reading the session registry.
 
 Invalid configuration is tolerant: unknown hide keys, conflicting rendering flags, unknown flags, missing `--hide` values, and positional arguments write warnings to stderr for `claude --debug`, then render a status line and exit 0.
 
 `COLORTERM=truecolor|24bit` is still honored as terminal capability detection for the RGB gradient progress bar. It is not project configuration.
+
+`CLAUDE_CONFIG_DIR` is read only to locate Claude Code's session registry for the peer name (`$CLAUDE_CONFIG_DIR/sessions/` first, then `~/.claude/sessions/`). Claude Code sets it when you use a custom config directory; it is not project configuration either.
 
 ### Rendering tiers
 
