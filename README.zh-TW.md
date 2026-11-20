@@ -38,7 +38,7 @@
 | 行數 | `+84/-12` | 本次 session 中 Claude 新增／刪除的行數 |
 | 目錄 | `my-project/internal/renderer` | 專案 root + 相對路徑（正斜線）。Root 依三層 fallback 判定：(1) 若 `workspace.project_dir` 為目前目錄的嚴格祖先則採用；(2) 否則由目前目錄向上搜尋第一個 `.git`（檔案或資料夾）；(3) 都失敗則退回當前目錄的 base name。當 current dir 等於 root 時僅顯示 root base name |
 | 指示器 | `⚙ code-reviewer` | 執行中的子 agent 名稱，或 worktree 時顯示 `⚙ worktree:name`。Worktree 優先於 agent |
-| 定址名稱 | `⇄ my-project-56` | 其他 Claude Code session 傳訊息給這個 session 時用的名稱，也就是 `ListAgents` 顯示、`SendMessage` 接受的地址。用 payload 的 `session_id` 到 Claude Code 內部的 session registry（`<config>/sessions/*.json`，`<config>` 為 `$CLAUDE_CONFIG_DIR` 或 `~/.claude`）比對取得。它**不是** AI 產生的 session 標題。互動 session 的名稱為 `<資料夾名>-<NN>`；背景 job 先用 job id，之後改成 AI 標題。找不到相符項目時隱藏（舊版 Claude Code，或內部格式改變）。ASCII：`peer:my-project-56` |
+| 定址名稱 | `⇄ my-project-56` | 其他 Claude Code session 傳訊息給這個 session 時用的名稱，也就是 `ListAgents` 顯示、`SendMessage` 接受的地址。用 payload 的 `session_id` 到 Claude Code 內部的 session registry（`<config>/sessions/*.json`，`<config>` 為 `$CLAUDE_CONFIG_DIR` 或 `~/.claude`）比對取得。它可能和 AI 產生的 session 標題不同，所以 statusline 一律讀 registry，不用 payload 的 `session_name`。互動 session 的起始名稱是 `<資料夾名>-<xx>`（兩碼十六進位，例如 `my-project-d1`），背景 job 的起始名稱是 job id。之後 Claude Code 可能自動改名（背景 job 改成 AI 標題，互動 session 可能改成簡短的自動名稱），這一段會在下次刷新時顯示新名稱。找不到相符項目時隱藏（舊版 Claude Code，或內部格式改變）。ASCII：`peer:my-project-56` |
 
 數值為零的區段會完全隱藏（`+0/-0`、`0m0s`、未提供的速率限制）。
 

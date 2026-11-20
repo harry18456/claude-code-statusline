@@ -71,7 +71,7 @@ The JSON payload is decoded into typed Go structs defined in `internal/model/`. 
 
 ### Session peer name lookup
 
-`internal/peername` maps the payload `session_id` to the name other Claude Code sessions use as the `SendMessage` address. It reads Claude Code's undocumented session registry, `<config>/sessions/<pid>.json` (fields `sessionId`, `name`, `updatedAt`), with `<config>` = `$CLAUDE_CONFIG_DIR` then `~/.claude`. Only regular `*.json` files up to 64 KiB are read; `*.key` files in the same directory are secrets and are never opened. Every failure resolves to "no name", so the section silently disappears. The payload `session_name` is an AI title, not this address. On Windows the files are opened with `FILE_SHARE_DELETE` so Claude Code can still delete them during a read.
+`internal/peername` maps the payload `session_id` to the name other Claude Code sessions use as the `SendMessage` address. It reads Claude Code's undocumented session registry, `<config>/sessions/<pid>.json` (fields `sessionId`, `name`, `updatedAt`), with `<config>` = `$CLAUDE_CONFIG_DIR` then `~/.claude`. Only regular `*.json` files up to 64 KiB are read; `*.key` files in the same directory are secrets and are never opened. Every failure resolves to "no name", so the section silently disappears. The payload `session_name` looks like an AI title and can differ from this address, so the lookup never uses it. Claude Code can rename a session at any time (interactive sessions start as `<folder>-<xx>` with two hex characters, background jobs as their job id); every render re-reads the registry, so the section follows renames. On Windows the files are opened with `FILE_SHARE_DELETE` so Claude Code can still delete them during a read.
 
 ### Rendering tiers
 
